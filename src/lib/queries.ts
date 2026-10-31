@@ -339,6 +339,12 @@ export async function aboOverview(softwareIds: string[]) {
 }
 
 // ---------------- Monitorização de campanhas ----------------
+/** Última leitura da Meta, por qualquer via (ao abrir as campanhas, no botão ou de 6 em 6 horas). */
+export async function lastMetaSync(): Promise<Date | null> {
+  const [r] = await db.select({ at: sql<string | null>`max(${schema.metaCampaignTotals.updatedAt})` }).from(schema.metaCampaignTotals);
+  return r?.at ? new Date(r.at) : null;
+}
+
 /** Campanhas com números (da sincronização da Meta), a mais recente primeiro. */
 export async function monitoredCampaigns(softwareIds: string[]) {
   if (!softwareIds.length) return [];

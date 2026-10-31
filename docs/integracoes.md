@@ -50,7 +50,9 @@ Todas as ligações verificam a assinatura de cada pedido e guardam o pedido em 
 
 - Token de utilizador de sistema do Business Portfolio N5, com `ads_read`, em `META_ACCESS_TOKEN`.
 - Em Definições › Softwares, preencher a conta de anúncios de cada software (`act_…`).
-- `/api/cron/meta-sync` lê os últimos 28 dias ao nível do anúncio, por dia, a cada 6 horas. Também existe o botão "Sincronizar Meta agora".
+- Ao abrir Campanhas e funil, a página lê da Meta hoje e ontem antes de mostrar os números (no máximo uma leitura a cada 30 segundos; se a Meta demorar mais de 5 segundos, mostra a última leitura e diz porquê). A hora da leitura aparece ao lado do botão.
+- `/api/cron/meta-sync` recalcula os últimos 28 dias ao nível do anúncio, por dia, a cada 6 horas (a Meta ainda corrige esses dias). O botão "Recalcular 28 dias da Meta" faz o mesmo na hora.
+- As linhas gravam-se em lote: as funções da Netlify correm longe da base, e gravar linha a linha levava cerca de 20 segundos.
 - Alternativa sem token: importar o CSV exportado do Gestor de Anúncios em Campanhas e funil.
 - Atribuição: as UTMs chegam com o evento `account.signed_up` (propriedades `utm_campaign`, `fbclid`, …). O nome da campanha tem de ser igual a `utm_campaign`.
 - A sincronização guarda também os IDs do conjunto e do anúncio, as visitas à página (`landing_page_view`) e as compras do píxel.

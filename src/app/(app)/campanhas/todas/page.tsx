@@ -3,6 +3,8 @@ import { readFilters } from "@/lib/filters";
 import { campaigns, softwaresFor } from "@/lib/queries";
 import { fmtEur, fmtNum, fmtPct } from "@/lib/format";
 import { Bar, Empty, Kpi, PageHeader, Tabs, withParams } from "@/components/ui";
+import { syncMetaLive } from "@/lib/meta";
+import { MetaLida } from "../MetaLida";
 import { syncNow } from "../actions";
 
 export default async function TodasAsCampanhas({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -11,6 +13,8 @@ export default async function TodasAsCampanhas({ searchParams }: { searchParams:
   const filters = readFilters(sp);
   const sws = await softwaresFor(user);
   const ids = scopeSoftwares(user, filters.software, sws);
+  // números da Meta ao vivo: cada abertura lê os últimos dias antes de mostrar
+  const live = await syncMetaLive();
   const { rows, funnel } = await campaigns(ids, filters.range);
   const swName = (id: string) => sws.find((s) => s.id === id)?.name ?? id;
   const stages = funnel ? [
@@ -21,7 +25,7 @@ export default async function TodasAsCampanhas({ searchParams }: { searchParams:
   return (
     <>
       <PageHeader title="Campanhas e funil" lead="Do gasto na Meta ao cliente pagante, por software.">
-        <form action={syncNow}><button className="btn">Sincronizar Meta agora</button></form>
+        <MetaLida live={live} action={syncNow} />
       </PageHeader>
       <Tabs items={[{ key: "monitorizacao", label: "Monitorização", href: withParams("/campanhas", sp) }, { key: "todas", label: "Todas as campanhas", href: withParams("/campanhas/todas", sp) }]} active="todas" />
       {funnel ? (
