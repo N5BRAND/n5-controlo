@@ -3,7 +3,7 @@ import { readFilters } from "@/lib/filters";
 import { campaignMonitor, monitoredCampaigns, softwaresFor } from "@/lib/queries";
 import { adRef, awarenessLevel, funnelRows, groupAds, landingPageOf } from "@/lib/metrics";
 import { siteAnalytics, posthogConfigured, posthogProjectKeyOnly, type SiteData } from "@/lib/posthog";
-import { siteFor } from "@/lib/siteQueries";
+import { normalizePage, siteFor } from "@/lib/siteQueries";
 import { syncMetaLive } from "@/lib/meta";
 import { fmtDate, fmtEur, fmtNum, fmtPct } from "@/lib/format";
 import { Bar, Empty, Kpi, PageHeader, Pill, Tabs, withParams } from "@/components/ui";
@@ -14,7 +14,8 @@ import { syncNow } from "./actions";
 
 // Monitorização de uma campanha da Meta desde o início, como o painel da campanha: indicadores, funil do anúncio
 // à pré-reserva, gasto e leads por dia, por landing page (com os números do site), por nível de consciência, por anúncio
-// e, do PostHog, o que acontece na página principal. O nível e a página vêm do nome do anúncio («CLA · N3 · TEMA · /pasta/»).
+// e, do PostHog, o que acontece numa página do site (a principal ou a landing page escolhida em ?pagina=). O nível e a
+// página vêm do nome do anúncio («CLA · N3 · TEMA · /pasta/»).
 
 const ratio = (a: number, b: number) => (b ? a / b : null);
 const perUnit = (cents: number, n: number) => (n ? Math.round(cents / n) : null);
@@ -42,7 +43,8 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
   const chosen = list.find((c) => c.campaignId === asked) ?? list[0];
   const m = chosen ? await campaignMonitor(chosen.campaignId, ids) : null;
   const host = m?.softwareId ? siteFor(m.softwareId) : null;
-  const site = host && m?.first ? await siteAnalytics(host, m.first) : null;
+  const page = normalizePage(typeof sp.pagina === "string" ? sp.pagina : "/") ?? "/";
+  const site = host && m?.first ? await siteAnalytics(host, m.first, page) : null;
   const tabs = [
     { key: "monitorizacao", label: "Monitorização", href: withParams("/campanhas", sp) },
     { key: "todas", label: "Todas as campanhas", href: withParams("/campanhas/todas", sp) },
@@ -57,7 +59,7 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
       {!chosen || !m ? (
         <Empty title="Sem campanhas sincronizadas">Liga a conta de anúncios do software em Definições › Softwares e carrega em «Sincronizar Meta agora».</Empty>
       ) : (
-        <Monitor m={m} chosen={chosen} list={list} sp={sp} host={host} site={site?.data ?? null} siteErrors={site?.errors ?? []} />
+        <Monitor m={m} chosen={chosen} list={list} sp={sp} host={host} page={page} site={site?.data ?? null} siteErrors={site?.errors ?? []} />
       )}
     </>
   );
@@ -66,8 +68,8 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
 type Monitor = NonNullable<Awaited<ReturnType<typeof campaignMonitor>>>;
 type Campaign = Awaited<ReturnType<typeof monitoredCampaigns>>[number];
 
-function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
-  m: Monitor; chosen: Campaign; list: Campaign[]; sp: Record<string, string | string[] | undefined>; host: string | null; site: SiteData | null; siteErrors: string[];
+function Monitor({ m, chosen, list, sp, host, page, site, siteErrors }: {
+  m: Monitor; chosen: Campaign; list: Campaign[]; sp: Record<string, string | string[] | undefined>; host: string | null; page: string; site: SiteData | null; siteErrors: string[];
 }) {
   const t = m.totals;
   const days = m.first ? daysBetween(m.first, today()) : 0;
@@ -117,6 +119,11 @@ function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
       visits, fromMeta: n0(p?.aberturas_meta), stay: visits ? n0(p?.qualificadas) / visits : null, sent: n0(p?.enviadas), paid: n0(p?.pagas) };
   }).sort((a, b) => (a.key === "/" ? -1 : b.key === "/" ? 1 : b.spendCents - a.spendCents || a.key.localeCompare(b.key)));
   const activePages = pages.filter((p) => p.state === "Ativa").length;
+  // Páginas que se podem escolher para os números do site: as dos anúncios primeiro, depois as outras com visitas
+  const pageOptions = [...new Set([page, ...pages.map((p) => p.key), ...sitePages.keys()])].filter((k) => normalizePage(k) === k)
+    .sort((a, b) => (a === "/" ? -1 : b === "/" ? 1 : Number(!pageKeys.includes(a)) - Number(!pageKeys.includes(b))));
+  const keepForPage = Object.fromEntries(Object.entries(sp).filter(([k, v]) => k !== "pagina" && typeof v === "string")) as Record<string, string>;
+  const pageHref = (key: string) => `/campanhas?${new URLSearchParams({ ...keepForPage, pagina: key })}#site`;
 
   const levels = groupAds(ads, (r) => { const n = awarenessLevel(r.adName); return n ? `N${n}` : "Sem nível"; })
     .sort((a, b) => a.key.localeCompare(b.key, "pt"));
@@ -169,11 +176,11 @@ function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
       <section className="card overflow-x-auto">
         <h2 className="h2">Por landing page</h2>
         <p className="text-base mb-1">Com anúncios a correr: <b className="num">{fmtNum(activePages)}</b> de <b className="num">{fmtNum(pages.length)}</b> landing pages.</p>
-        <p className="text-xs text-muted mb-3">Cada página para onde os anúncios levam, desde o início. Está ativa quando tem pelo menos um anúncio a correr. Gasto, cliques e leads são da Meta, somados pelos anúncios que levam a essa página (o endereço no fim do nome do anúncio; sem endereço, a página principal). Visitas, 6 segundos e inscrições são do site, contadas nessa página; quem paga conta na página onde abriu o pagamento.</p>
+        <p className="text-xs text-muted mb-3">Cada página para onde os anúncios levam, desde o início. Está ativa quando tem pelo menos um anúncio a correr. Gasto, cliques e leads são da Meta, somados pelos anúncios que levam a essa página (o endereço no fim do nome do anúncio; sem endereço, a página principal). Visitas, 6 segundos e inscrições são do site, contadas nessa página; quem paga conta na página onde abriu o pagamento. Carrega numa página para ver, mais abaixo, tudo o que acontece nela.</p>
         <table className="tbl">
           <thead><tr><th>Página</th><th>Estado</th><th className="text-right">Anúncios a correr</th><th className="text-right">Gasto</th><th className="text-right">Cliques</th><th className="text-right">Leads</th><th className="text-right">Custo/lead</th><th className="text-right">Visitas</th><th className="text-right">Da Meta</th><th className="text-right">Ficam 6 s</th><th className="text-right">Inscrições</th><th className="text-right">Pagam</th></tr></thead>
           <tbody>{pages.map((p) => (
-            <tr key={p.key}><td className="num">{p.key}</td><td><Pill tone={PAGE_TONE[p.state]}>{p.state}</Pill></td><td className="num text-right">{fmtNum(p.active)}</td>
+            <tr key={p.key}><td className="num"><a href={pageHref(p.key)} className={p.key === page ? "font-semibold underline" : "underline decoration-line hover:decoration-current"} title="Ver os números do site desta página">{p.key}</a></td><td><Pill tone={PAGE_TONE[p.state]}>{p.state}</Pill></td><td className="num text-right">{fmtNum(p.active)}</td>
               <td className="num text-right">{fmtEur(p.spendCents)}</td><td className="num text-right">{fmtNum(p.clicks)}</td><td className="num text-right">{fmtNum(p.leads)}</td>
               <td className="num text-right">{fmtEur(perUnit(p.spendCents, p.leads))}</td>
               <td className="num text-right">{site ? fmtNum(p.visits) : "–"}</td><td className="num text-right">{site ? fmtNum(p.fromMeta) : "–"}</td>
@@ -225,7 +232,7 @@ function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
         </div>
       </section>
 
-      {host && site ? <SiteBlock host={host} site={site} metaClicksByDay={m.days.map((d) => ({ date: d.date, clicks: d.clicks }))} /> : (
+      {host && site ? <SiteBlock host={host} page={page} pageOptions={pageOptions} keep={keepForPage} site={site} metaClicksByDay={m.days.map((d) => ({ date: d.date, clicks: d.clicks }))} /> : (
         <section className="card">
           <h2 className="h2">O que acontece no site</h2>
           <p className="text-sm text-muted">{!host ? "Este software ainda não tem um site ligado ao PostHog." : posthogProjectKeyOnly()
