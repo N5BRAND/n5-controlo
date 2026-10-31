@@ -2,12 +2,14 @@ import { requireUser, scopeSoftwares } from "@/lib/auth";
 import { readFilters } from "@/lib/filters";
 import { campaignMonitor, monitoredCampaigns, softwaresFor } from "@/lib/queries";
 import { adRef, awarenessLevel, funnelRows, groupAds, landingPageOf } from "@/lib/metrics";
-import { siteAnalytics, posthogConfigured, type SiteData } from "@/lib/posthog";
+import { siteAnalytics, posthogConfigured, posthogProjectKeyOnly, type SiteData } from "@/lib/posthog";
 import { siteFor } from "@/lib/siteQueries";
+import { syncMetaLive } from "@/lib/meta";
 import { fmtDate, fmtEur, fmtNum, fmtPct } from "@/lib/format";
 import { Bar, Empty, Kpi, PageHeader, Pill, Tabs, withParams } from "@/components/ui";
 import { DailyBars } from "@/components/DailyBars";
 import { SiteBlock } from "./SiteBlock";
+import { MetaLida } from "./MetaLida";
 import { syncNow } from "./actions";
 
 // Monitorização de uma campanha da Meta desde o início, como o painel da campanha: indicadores, funil do anúncio
@@ -33,6 +35,8 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
   const filters = readFilters(sp);
   const sws = await softwaresFor(user);
   const ids = scopeSoftwares(user, filters.software, sws);
+  // números da Meta ao vivo: cada abertura lê os últimos dias antes de mostrar
+  const live = await syncMetaLive();
   const list = await monitoredCampaigns(ids);
   const asked = typeof sp.campanha === "string" ? sp.campanha : null;
   const chosen = list.find((c) => c.campaignId === asked) ?? list[0];
@@ -47,7 +51,7 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
   return (
     <>
       <PageHeader title="Campanhas e funil" lead="Uma campanha da Meta desde o início: do anúncio à pré-reserva, por landing page, nível e anúncio, e o que acontece no site.">
-        <form action={syncNow}><button className="btn">Sincronizar Meta agora</button></form>
+        <MetaLida live={live} action={syncNow} />
       </PageHeader>
       <Tabs items={tabs} active="monitorizacao" />
       {!chosen || !m ? (
@@ -224,14 +228,16 @@ function Monitor({ m, chosen, list, sp, host, site, siteErrors }: {
       {host && site ? <SiteBlock host={host} site={site} metaClicksByDay={m.days.map((d) => ({ date: d.date, clicks: d.clicks }))} /> : (
         <section className="card">
           <h2 className="h2">O que acontece no site</h2>
-          <p className="text-sm text-muted">{!host ? "Este software ainda não tem um site ligado ao PostHog." : !posthogConfigured()
+          <p className="text-sm text-muted">{!host ? "Este software ainda não tem um site ligado ao PostHog." : posthogProjectKeyOnly()
+            ? "A POSTHOG_API_KEY que está na Netlify é a chave do projeto (começa por phc_): é a do site, serve para enviar eventos e não deixa ler números. Cria no PostHog uma chave pessoal (Settings › Personal API keys, começa por phx_) só com «Query: Read» e põe-na em POSTHOG_PERSONAL_API_KEY. Com ela, aparecem aqui as conclusões, o funil da página, as secções, o tempo, os passos da inscrição, os campos com erros e de onde vêm as visitas."
+            : !posthogConfigured()
             ? "Falta a chave pessoal do PostHog (POSTHOG_PERSONAL_API_KEY, só com «Query: Read») nas variáveis da Netlify. Com ela, aparecem aqui as conclusões, o funil da página, as secções, o tempo, os passos da inscrição, os campos com erros e de onde vêm as visitas, e as colunas do site em «Por landing page»."
             : "Não foi possível ler o PostHog."}</p>
         </section>
       )}
       {siteErrors.length ? <p className="text-xs text-warn">Algumas leituras do PostHog falharam: {siteErrors.join(" · ")}</p> : null}
 
-      <p className="text-xs text-muted max-w-3xl">Números da sincronização da Meta (de 6 em 6 horas, ou no botão). Leads e pré-reservas são os eventos Lead e Purchase do píxel: só contam quem aceita os cookies de marketing, por isso o site e a Stripe têm sempre mais. A Meta ainda corrige os últimos dias. Os números do site vêm do PostHog e guardam-se 5 minutos.</p>
+      <p className="text-xs text-muted max-w-3xl">Números da Meta lidos ao abrir a página (hoje e ontem; os 28 dias são recalculados de 6 em 6 horas e no botão). Leads e pré-reservas são os eventos Lead e Purchase do píxel: só contam quem aceita os cookies de marketing, por isso o site e a Stripe têm sempre mais. A Meta ainda corrige os últimos dias. Os números do site vêm do PostHog e guardam-se 5 minutos.</p>
     </div>
   );
 }

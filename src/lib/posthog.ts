@@ -9,6 +9,8 @@ import { buildSiteQueries, type SiteQuery } from "@/lib/siteQueries";
 
 const key = () => process.env.POSTHOG_PERSONAL_API_KEY || (process.env.POSTHOG_API_KEY?.startsWith("phx_") ? process.env.POSTHOG_API_KEY : "");
 export const posthogConfigured = () => !!key();
+/** Na Netlify só está a chave do projeto (phc_…, a do site): serve para enviar eventos, não para ler números. */
+export const posthogProjectKeyOnly = () => !key() && !!process.env.POSTHOG_API_KEY?.startsWith("phc_");
 
 type Row = Record<string, string | number | null>;
 
