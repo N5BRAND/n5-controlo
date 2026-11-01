@@ -1,5 +1,5 @@
 import { requireUser, scopeSoftwares } from "@/lib/auth";
-import { readFilters } from "@/lib/filters";
+import { isoDay, rangeDays, readFilters } from "@/lib/filters";
 import { campaignMonitor, monitoredCampaigns, softwaresFor } from "@/lib/queries";
 import { adRef, awarenessLevel, funnelRows, groupAds, landingPageOf } from "@/lib/metrics";
 import { siteAnalytics, posthogConfigured, posthogProjectKeyOnly, type SiteData } from "@/lib/posthog";
@@ -15,13 +15,16 @@ import { syncNow } from "./actions";
 // Monitorização de uma campanha da Meta desde o início, como o painel da campanha: indicadores, funil do anúncio
 // à pré-reserva, gasto e leads por dia, por landing page (com os números do site), por nível de consciência, por anúncio
 // e, do PostHog, o que acontece numa página do site (a principal ou a landing page escolhida em ?pagina=). O nível e a
-// página vêm do nome do anúncio («CLA · N3 · TEMA · /pasta/»).
+// página vêm do nome do anúncio («CLA · N3 · TEMA · /pasta/»). Com um período escolhido no topo (?periodo=, também o
+// personalizado com ?de= e ?ate=), tudo conta só nesses dias; sem ele, desde o início da campanha.
 
 const ratio = (a: number, b: number) => (b ? a / b : null);
 const perUnit = (cents: number, n: number) => (n ? Math.round(cents / n) : null);
 const n0 = (v: unknown) => Number(v) || 0;
 const today = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Lisbon" }).format(new Date());
 const daysBetween = (from: string, to: string) => Math.round((Date.parse(to) - Date.parse(from)) / 864e5) + 1;
+const dayAfter = (day: string) => isoDay(new Date(Date.parse(`${day}T00:00:00Z`) + 864e5));
+type Periodo = { de: string; ate: string };
 
 const STATUS: Record<string, string> = {
   ACTIVE: "Ativo", PAUSED: "Pausado", CAMPAIGN_PAUSED: "Pausado", ADSET_PAUSED: "Pausado", PENDING_REVIEW: "Em revisão", IN_PROCESS: "Em revisão",
@@ -41,10 +44,11 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
   const list = await monitoredCampaigns(ids);
   const asked = typeof sp.campanha === "string" ? sp.campanha : null;
   const chosen = list.find((c) => c.campaignId === asked) ?? list[0];
-  const m = chosen ? await campaignMonitor(chosen.campaignId, ids) : null;
+  const periodo: Periodo | undefined = typeof sp.periodo === "string" ? rangeDays(filters.range) : undefined;
+  const m = chosen ? await campaignMonitor(chosen.campaignId, ids, periodo) : null;
   const host = m?.softwareId ? siteFor(m.softwareId) : null;
   const page = normalizePage(typeof sp.pagina === "string" ? sp.pagina : "/") ?? "/";
-  const site = host && m?.first ? await siteAnalytics(host, m.first, page) : null;
+  const site = host && m?.first ? await siteAnalytics(host, periodo?.de ?? m.first, page, periodo ? dayAfter(periodo.ate) : undefined) : null;
   const tabs = [
     { key: "monitorizacao", label: "Monitorização", href: withParams("/campanhas", sp) },
     { key: "todas", label: "Todas as campanhas", href: withParams("/campanhas/todas", sp) },
@@ -52,14 +56,16 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHeader title="Campanhas e funil" lead="Uma campanha da Meta desde o início: do anúncio à pré-reserva, por landing page, nível e anúncio, e o que acontece no site.">
+      <PageHeader title="Campanhas e funil" lead="Uma campanha da Meta, desde o início ou no período escolhido em cima: do anúncio à pré-reserva, por landing page, nível e anúncio, e o que acontece no site.">
         <MetaLida live={live} action={syncNow} />
       </PageHeader>
       <Tabs items={tabs} active="monitorizacao" />
-      {!chosen || !m ? (
+      {chosen && !m && periodo ? (
+        <Empty title="Sem números neste período">A campanha «{chosen.name}» não teve gasto de {fmtDate(periodo.de)} a {fmtDate(periodo.ate)}. Escolhe outras datas ou «Desde o início» no período, em cima.</Empty>
+      ) : !chosen || !m ? (
         <Empty title="Sem campanhas sincronizadas">Liga a conta de anúncios do software em Definições › Softwares e carrega em «Sincronizar Meta agora».</Empty>
       ) : (
-        <Monitor m={m} chosen={chosen} list={list} sp={sp} host={host} page={page} site={site?.data ?? null} siteErrors={site?.errors ?? []} />
+        <Monitor m={m} chosen={chosen} list={list} sp={sp} periodo={periodo} host={host} page={page} site={site?.data ?? null} siteErrors={site?.errors ?? []} />
       )}
     </>
   );
@@ -68,12 +74,15 @@ export default async function Campanhas({ searchParams }: { searchParams: Promis
 type Monitor = NonNullable<Awaited<ReturnType<typeof campaignMonitor>>>;
 type Campaign = Awaited<ReturnType<typeof monitoredCampaigns>>[number];
 
-function Monitor({ m, chosen, list, sp, host, page, site, siteErrors }: {
-  m: Monitor; chosen: Campaign; list: Campaign[]; sp: Record<string, string | string[] | undefined>; host: string | null; page: string; site: SiteData | null; siteErrors: string[];
+function Monitor({ m, chosen, list, sp, periodo, host, page, site, siteErrors }: {
+  m: Monitor; chosen: Campaign; list: Campaign[]; sp: Record<string, string | string[] | undefined>; periodo?: Periodo; host: string | null; page: string; site: SiteData | null; siteErrors: string[];
 }) {
   const t = m.totals;
-  const days = m.first ? daysBetween(m.first, today()) : 0;
+  // dias com campanha: desde o primeiro dia com números (no período, se houver) até hoje ou ao fim do período
+  const end = periodo && periodo.ate < today() ? periodo.ate : today();
+  const days = m.first ? Math.max(0, daysBetween(m.first, end)) : 0;
   const budgetToDate = m.dailyBudgetCents ? m.dailyBudgetCents * days : null;
+  const quando = periodo ? "no período escolhido" : "desde o início";
   const funnel = funnelRows([
     { label: "Impressões", n: t.impressions }, { label: "Cliques", n: t.clicks }, { label: "Visitas à página", n: t.landingViews },
     { label: "Leads", n: t.leads }, { label: "Foram ao pagamento", n: t.checkouts }, { label: "Pré-reservas pagas", n: t.purchases },
@@ -142,18 +151,20 @@ function Monitor({ m, chosen, list, sp, host, page, site, siteErrors }: {
       </form>
 
       <p className="text-lg max-w-3xl">
-        Em <b className="num">{fmtNum(days)}</b> dias, desde {fmtDate(m.first)}, <b className="num">{fmtEur(t.spendCents)}</b> de anúncios trouxeram{" "}
+        {periodo ? <>De {fmtDate(periodo.de)} a {fmtDate(periodo.ate)},</> : <>Em <b className="num">{fmtNum(days)}</b> dias, desde {fmtDate(m.first)},</>}{" "}
+        <b className="num">{fmtEur(t.spendCents)}</b> de anúncios trouxeram{" "}
         <b className="num">{fmtNum(t.leads)}</b> leads{t.leads ? <>, a <b className="num">{fmtEur(perUnit(t.spendCents, t.leads))}</b> cada,</> : ""} e{" "}
         <b className="num">{fmtNum(t.purchases)}</b> pré-reservas pagas.
       </p>
 
       <section className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        <Kpi label="Gasto" value={fmtEur(t.spendCents)} note={budgetToDate ? `de ${fmtEur(budgetToDate)} de orçamento até hoje` : "desde o início"} />
+        <Kpi label="Gasto" value={fmtEur(t.spendCents)} note={budgetToDate ? `de ${fmtEur(budgetToDate)} de orçamento ${periodo ? "no período" : "até hoje"}` : quando} />
         <Kpi label="Leads" value={fmtNum(t.leads)} note={`${fmtNum(t.landingViews)} visitas à página`} />
         <Kpi label="Custo por lead" value={fmtEur(perUnit(t.spendCents, t.leads))} note="gasto a dividir pelas leads" />
         <Kpi label="Pré-reservas pagas" value={fmtNum(m.stripeTotal)} note={`na Stripe · ${fmtNum(t.purchases)} no píxel · ${fmtNum(t.checkouts)} foram ao pagamento`} />
         <Kpi label="CTR" value={fmtPct(ratio(t.clicks, t.impressions), 2)} note={`${fmtNum(t.clicks)} cliques em ${fmtNum(t.impressions)} impressões`} />
-        {m.frequency !== null ? (
+        {/* alcance e frequência só existem para a campanha inteira: num período, fica o custo por clique */}
+        {m.frequency !== null && !periodo ? (
           <Kpi label="Frequência" value={m.frequency.toFixed(2).replace(".", ",")} note={`vezes por pessoa · ${fmtNum(m.reach)} pessoas alcançadas`} />
         ) : (
           <Kpi label="Custo por clique" value={fmtEur(perUnit(t.spendCents, t.clicks))} note={`CPM ${fmtEur(t.impressions ? Math.round((t.spendCents / t.impressions) * 1000) : null)}`} />
@@ -162,7 +173,7 @@ function Monitor({ m, chosen, list, sp, host, page, site, siteErrors }: {
 
       <section className="card">
         <h2 className="h2">Do anúncio à pré-reserva</h2>
-        <p className="text-xs text-muted mb-3">Desde o início. Ao lado de cada passo, a parte que passou do passo anterior; a maior perda está a vermelho.</p>
+        <p className="text-xs text-muted mb-3">{periodo ? "No período escolhido" : "Desde o início"}. Ao lado de cada passo, a parte que passou do passo anterior; a maior perda está a vermelho.</p>
         <ol className="space-y-2">
           {funnel.map((s) => (
             <li key={s.label} className="grid grid-cols-[150px_1fr_170px] gap-3 items-center text-sm">
@@ -176,7 +187,7 @@ function Monitor({ m, chosen, list, sp, host, page, site, siteErrors }: {
       <section className="card overflow-x-auto">
         <h2 className="h2">Por landing page</h2>
         <p className="text-base mb-1">Com anúncios a correr: <b className="num">{fmtNum(activePages)}</b> de <b className="num">{fmtNum(pages.length)}</b> landing pages.</p>
-        <p className="text-xs text-muted mb-3">Cada página para onde os anúncios levam, desde o início. Está ativa quando tem pelo menos um anúncio a correr. Gasto, cliques e leads são da Meta, somados pelos anúncios que levam a essa página (o endereço no fim do nome do anúncio; sem endereço, a página principal). Visitas, 6 segundos e inscrições são do site, contadas nessa página; quem paga conta na página onde abriu o pagamento. Carrega numa página para ver, mais abaixo, tudo o que acontece nela.</p>
+        <p className="text-xs text-muted mb-3">Cada página para onde os anúncios levam, {quando}. Está ativa quando tem pelo menos um anúncio a correr. Gasto, cliques e leads são da Meta, somados pelos anúncios que levam a essa página (o endereço no fim do nome do anúncio; sem endereço, a página principal). Visitas, 6 segundos e inscrições são do site, contadas nessa página; quem paga conta na página onde abriu o pagamento. Carrega numa página para ver, mais abaixo, tudo o que acontece nela.</p>
         <table className="tbl">
           <thead><tr><th>Página</th><th>Estado</th><th className="text-right">Anúncios a correr</th><th className="text-right">Gasto</th><th className="text-right">Cliques</th><th className="text-right">Leads</th><th className="text-right">Custo/lead</th><th className="text-right">Visitas</th><th className="text-right">Da Meta</th><th className="text-right">Ficam 6 s</th><th className="text-right">Inscrições</th><th className="text-right">Pagam</th></tr></thead>
           <tbody>{pages.map((p) => (
@@ -204,7 +215,7 @@ function Monitor({ m, chosen, list, sp, host, page, site, siteErrors }: {
 
       <section className="card">
         <h2 className="h2">Por nível de consciência</h2>
-        <p className="text-xs text-muted mb-3">N1 é quem ainda não sabe que tem o problema; N5 quem já está pronto para a pré-reserva. A barra é o gasto desde o início; ao lado, as leads e o custo por lead.</p>
+        <p className="text-xs text-muted mb-3">N1 é quem ainda não sabe que tem o problema; N5 quem já está pronto para a pré-reserva. A barra é o gasto {quando}; ao lado, as leads e o custo por lead.</p>
         <ol className="space-y-2">
           {levels.map((l) => (
             <li key={l.key} className="grid grid-cols-[150px_1fr_220px] gap-3 items-center text-sm">
@@ -217,7 +228,7 @@ function Monitor({ m, chosen, list, sp, host, page, site, siteErrors }: {
 
       <section className="card overflow-x-auto">
         <h2 className="h2">Anúncios</h2>
-        <p className="text-xs text-muted mb-3">Todos os anúncios da campanha, desde o início, do que gastou mais para o que gastou menos. «Pré-reservas (píxel)» é o que a Meta conta; «Compras Stripe» são os pagamentos confirmados pela Stripe, ligados ao anúncio pela inscrição da pessoa (o utm_content com que chegou ao site).{stripeUnlinked > 0 ? ` ${fmtNum(stripeUnlinked)} ${stripeUnlinked === 1 ? "compra" : "compras"} sem anúncio ligado (sem inscrição no site com o mesmo email, ou vinda de fora dos anúncios).` : ""}</p>
+        <p className="text-xs text-muted mb-3">Todos os anúncios da campanha, {quando}, do que gastou mais para o que gastou menos. «Pré-reservas (píxel)» é o que a Meta conta; «Compras Stripe» são os pagamentos confirmados pela Stripe, ligados ao anúncio pela inscrição da pessoa (o utm_content com que chegou ao site).{stripeUnlinked > 0 ? ` ${fmtNum(stripeUnlinked)} ${stripeUnlinked === 1 ? "compra" : "compras"} sem anúncio ligado (sem inscrição no site com o mesmo email, ou vinda de fora dos anúncios).` : ""}</p>
         <div className="max-h-[34rem] overflow-auto">
           <table className="tbl">
             <thead><tr><th>Anúncio</th><th>Nível</th><th>Formato</th><th>Estado</th><th className="text-right">Gasto</th><th className="text-right">Impressões</th><th className="text-right">CTR</th><th className="text-right">Leads</th><th className="text-right">Custo/lead</th><th className="text-right">Pré-reservas (píxel)</th><th className="text-right">Compras Stripe</th></tr></thead>

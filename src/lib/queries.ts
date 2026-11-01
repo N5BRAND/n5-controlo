@@ -1,6 +1,6 @@
 import "server-only";
 import { cache } from "react";
-import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lt, lte, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { CurrentUser } from "./auth";
 import type { Range } from "./filters";
@@ -358,10 +358,15 @@ export async function monitoredCampaigns(softwareIds: string[]) {
     .orderBy(desc(sql`max(${schema.campaignDaily.date})`), desc(sql`sum(${schema.campaignDaily.spendCents})`));
 }
 
-/** Uma campanha desde o início: por anúncio, por dia e o orçamento diário (se estiver nas regras ABO). */
-export async function campaignMonitor(campaignId: string, softwareIds: string[]) {
+/** Uma campanha desde o início, ou só entre dois dias (incluídos): por anúncio, por dia e o orçamento diário (se estiver nas regras ABO). */
+export async function campaignMonitor(campaignId: string, softwareIds: string[], periodo?: { de: string; ate: string }) {
   if (!softwareIds.length) return null;
-  const where = and(eq(schema.campaignDaily.campaignId, campaignId), inArray(schema.campaignDaily.softwareId, softwareIds));
+  const where = and(eq(schema.campaignDaily.campaignId, campaignId), inArray(schema.campaignDaily.softwareId, softwareIds),
+    periodo ? gte(schema.campaignDaily.date, periodo.de) : undefined, periodo ? lte(schema.campaignDaily.date, periodo.ate) : undefined);
+  // Compras na Stripe: no período escolhido, ou desde o primeiro dia da campanha
+  const paidWhen = periodo
+    ? and(gte(schema.stripePurchases.paidAt, new Date(`${periodo.de}T00:00:00Z`)), lt(schema.stripePurchases.paidAt, new Date(new Date(`${periodo.ate}T00:00:00Z`).getTime() + 864e5)))
+    : sql`${schema.stripePurchases.paidAt} >= (select min(${schema.campaignDaily.date}) from ${schema.campaignDaily} where ${schema.campaignDaily.campaignId} = ${campaignId})`;
   const sums = {
     spendCents: sql<number>`sum(${schema.campaignDaily.spendCents})::int`, impressions: sql<number>`sum(${schema.campaignDaily.impressions})::int`,
     clicks: sql<number>`sum(${schema.campaignDaily.clicks})::int`, leads: sql<number>`sum(${schema.campaignDaily.leads})::int`,
@@ -382,11 +387,11 @@ export async function campaignMonitor(campaignId: string, softwareIds: string[])
     // Estado e formato de todos os anúncios da campanha, também os que ainda não gastaram
     db.select().from(schema.metaAds).where(and(eq(schema.metaAds.campaignId, campaignId), inArray(schema.metaAds.softwareId, softwareIds))),
     db.select().from(schema.metaCampaignTotals).where(eq(schema.metaCampaignTotals.campaignId, campaignId)),
-    // Compras na Stripe desde o primeiro dia da campanha, pelo anúncio da inscrição de cada pessoa (null: sem inscrição ligada)
+    // Compras na Stripe, pelo anúncio da inscrição de cada pessoa (null: sem inscrição ligada)
     db.select({ adRef: schema.signupAttributions.adRef, n: sql<number>`count(*)::int` })
       .from(schema.stripePurchases)
       .leftJoin(schema.signupAttributions, and(eq(schema.signupAttributions.emailHash, schema.stripePurchases.emailHash), eq(schema.signupAttributions.softwareId, schema.stripePurchases.softwareId)))
-      .where(and(eq(schema.stripePurchases.softwareId, sw), sql`${schema.stripePurchases.paidAt} >= (select min(${schema.campaignDaily.date}) from ${schema.campaignDaily} where ${schema.campaignDaily.campaignId} = ${campaignId})`))
+      .where(and(eq(schema.stripePurchases.softwareId, sw), paidWhen))
       .groupBy(schema.signupAttributions.adRef),
   ]);
   const totals = ads.reduce((a, r) => ({

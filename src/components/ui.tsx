@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fmtPct } from "@/lib/format";
+import { KEEP_PARAMS } from "@/lib/filters";
 
 export function Kpi({ label, value, note, tone }: { label: string; value: React.ReactNode; note?: React.ReactNode; tone?: "good" | "warn" | "bad" }) {
   const color = tone === "good" ? "text-good" : tone === "warn" ? "text-warn" : tone === "bad" ? "text-bad" : "text-data";
@@ -71,7 +72,7 @@ export function PageHeader({ title, lead, children }: { title: string; lead?: st
 /** Mantém software e período ao construir links entre vistas. */
 export function withParams(path: string, sp: Record<string, string | string[] | undefined>, extra: Record<string, string> = {}) {
   const p = new URLSearchParams();
-  for (const k of ["sw", "periodo"]) { const v = sp[k]; if (typeof v === "string") p.set(k, v); }
+  for (const k of KEEP_PARAMS) { const v = sp[k]; if (typeof v === "string") p.set(k, v); }
   for (const [k, v] of Object.entries(extra)) p.set(k, v);
   const s = p.toString();
   return s ? `${path}?${s}` : path;
