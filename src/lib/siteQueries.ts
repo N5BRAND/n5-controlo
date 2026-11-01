@@ -38,13 +38,17 @@ export function normalizePage(page: string | null | undefined): string | null {
   return p.length <= 100 && /^\/([a-z0-9-]+\/){0,4}$/.test(p) ? p : null;
 }
 
-export function buildSiteQueries(host: string, since: string, page = "/"): Record<SiteQuery, string> {
+/** until (opcional) é o dia a seguir ao último do período; sem ele, as consultas vão até agora. */
+export function buildSiteQueries(host: string, since: string, page = "/", until?: string): Record<SiteQuery, string> {
   if (!/^[a-z0-9.-]{3,253}$/i.test(host)) throw new Error("Domínio do site inválido.");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(since)) throw new Error("Data inválida.");
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(since) || (until !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(until))) throw new Error("Data inválida.");
   const path = normalizePage(page);
   if (!path) throw new Error("Página inválida.");
+  // com um período fechado, cada «desde» ganha o seu «até»
+  const desde = "timestamp >= toDateTime('{{SINCE}} 00:00:00')";
+  const comFim = until ? `${desde} AND timestamp < toDateTime('${until} 00:00:00')` : desde;
   // com funções, porque o «$'» das expressões regulares de PATH seria lido como um padrão de substituição
-  const fill = (s: string) => s.replaceAll("{{PAYERS}}", () => PAYERS).replaceAll("{{PAGE_MATCH}}", () => `${PATH} = {{PAGE}}`)
+  const fill = (s: string) => s.replaceAll("{{PAYERS}}", () => PAYERS).replaceAll(desde, () => comFim).replaceAll("{{PAGE_MATCH}}", () => `${PATH} = {{PAGE}}`)
     .replaceAll("{{SITE}}", () => `'${host}'`).replaceAll("{{SINCE}}", () => since).replaceAll("{{PAGE}}", () => `'${path}'`);
   return Object.fromEntries(Object.entries(TEMPLATES).map(([k, s]) => [k, fill(s)])) as Record<SiteQuery, string>;
 }

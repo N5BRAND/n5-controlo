@@ -34,9 +34,9 @@ const cachedQuery = unstable_cache(hogql, ["posthog-hogql"], { revalidate: 300 }
 export type SiteData = Record<SiteQuery, Row[]>;
 
 /** Todas as consultas do site em paralelo, para uma página («/» ou uma landing page). Uma que falhe vem vazia, com o erro em `errors`. */
-export async function siteAnalytics(host: string, since: string, page = "/"): Promise<{ data: SiteData; errors: string[] } | null> {
+export async function siteAnalytics(host: string, since: string, page = "/", until?: string): Promise<{ data: SiteData; errors: string[] } | null> {
   if (!posthogConfigured()) return null;
-  const queries = buildSiteQueries(host, since, page);
+  const queries = buildSiteQueries(host, since, page, until);
   const errors: string[] = [];
   const entries = await Promise.all(Object.entries(queries).map(async ([name, q]) => {
     try { return [name, await cachedQuery(q)] as const; } catch (err) { errors.push(`${name}: ${err instanceof Error ? err.message : err}`); return [name, [] as Row[]] as const; }

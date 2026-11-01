@@ -1,12 +1,13 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
+import { KEEP_PARAMS } from "@/lib/filters";
 
 export function Nav({ items }: { items: { href: string; label: string; badge?: number }[] }) {
   const pathname = usePathname();
   const params = useSearchParams();
   const keep = new URLSearchParams();
-  for (const k of ["sw", "periodo"]) { const v = params.get(k); if (v) keep.set(k, v); }
+  for (const k of KEEP_PARAMS) { const v = params.get(k); if (v) keep.set(k, v); }
   const qs = keep.toString() ? `?${keep.toString()}` : "";
   return (
     <ul className="space-y-0.5">

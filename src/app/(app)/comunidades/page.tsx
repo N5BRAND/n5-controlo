@@ -2,7 +2,7 @@ import Link from "next/link";
 import { desc, inArray } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { requireUser, scopeSoftwares } from "@/lib/auth";
-import { readFilters } from "@/lib/filters";
+import { KEEP_PARAMS, readFilters } from "@/lib/filters";
 import { communityStats, listFeedback, softwaresFor } from "@/lib/queries";
 import { fmtDate, fmtDateTime, fmtNum, fmtPct, LABELS } from "@/lib/format";
 import { Empty, Kpi, PageHeader, Pill, Tabs, withParams } from "@/components/ui";
@@ -60,7 +60,7 @@ async function Caixa({ ids, sp, swName }: { ids: string[]; sp: SP; swName: (id: 
     <section className="card">
       <form className="flex flex-wrap gap-2 mb-3" method="get">
         {typeof sp.sw === "string" ? <input type="hidden" name="sw" value={sp.sw} /> : null}
-        {typeof sp.periodo === "string" ? <input type="hidden" name="periodo" value={sp.periodo} /> : null}
+        {KEEP_PARAMS.filter((k) => k !== "sw").map((k) => (typeof sp[k] === "string" ? <input key={k} type="hidden" name={k} value={sp[k] as string} /> : null))}
         <select name="estado" defaultValue={status} className="input w-auto" aria-label="Estado">
           <option value="abertos">Abertos</option><option value="todos">Todos</option>
           {Object.entries(LABELS.feedbackStatus).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
