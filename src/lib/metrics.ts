@@ -369,3 +369,215 @@ export function compareTasks(
   }
   return b.score - a.score;
 }
+
+// ---------------- Monitorização de campanhas ----------------
+// Convenção dos nomes dos anúncios: «CLA · N3 · TEMA · /pasta/». O nível de consciência é o N1 a N5;
+// a landing page é o endereço no fim (sem endereço, a página principal).
+
+export function awarenessLevel(adName: string): number | null {
+  const m = /·\s*N([1-5])\s*·/.exec(adName ?? "");
+  return m ? Number(m[1]) : null;
+}
+
+export function landingPageOf(adName: string): string {
+  const m = /(\/[a-z0-9-]*\/?)\s*$/.exec(adName ?? "");
+  const path = m ? m[1] : "/";
+  return path.endsWith("/") ? path : `${path}/`;
+}
+
+export interface FunnelStep { label: string; n: number }
+export interface FunnelRow extends FunnelStep { share: number; fromPrevious: number | null; worst: boolean }
+
+/** Cada passo com a parte do primeiro (para a barra) e do anterior; a maior perda fica marcada. */
+export function funnelRows(steps: FunnelStep[]): FunnelRow[] {
+  const first = steps[0]?.n ?? 0;
+  const rates = steps.map((s, i) => (i === 0 || !steps[i - 1].n ? null : s.n / steps[i - 1].n));
+  const valid = rates.filter((r): r is number => r !== null);
+  const worst = valid.length ? Math.min(...valid) : null;
+  return steps.map((s, i) => ({ ...s, share: first ? s.n / first : 0, fromPrevious: rates[i], worst: worst !== null && rates[i] === worst }));
+}
+
+export interface AdTotals { spendCents: number; impressions: number; clicks: number; leads: number; landingViews: number; purchases: number }
+
+/** Soma linhas por uma chave (nível, página, ...), com o número de anúncios distintos. */
+export function groupAds<T extends AdTotals & { adName: string }>(rows: T[], key: (r: T) => string): (AdTotals & { key: string; ads: number })[] {
+  const map = new Map<string, AdTotals & { key: string; names: Set<string> }>();
+  for (const r of rows) {
+    const k = key(r);
+    const g = map.get(k) ?? { key: k, spendCents: 0, impressions: 0, clicks: 0, leads: 0, landingViews: 0, purchases: 0, names: new Set<string>() };
+    g.spendCents += r.spendCents; g.impressions += r.impressions; g.clicks += r.clicks;
+    g.leads += r.leads; g.landingViews += r.landingViews; g.purchases += r.purchases; g.names.add(r.adName);
+    map.set(k, g);
+  }
+  return [...map.values()].map(({ names, ...g }) => ({ ...g, ads: names.size }));
+}
+
+// ---------------- Monitorização: o site (PostHog) ----------------
+const n0 = (v: unknown) => Number(v) || 0;
+
+/** Secções das páginas da Clara (a principal, as landing pages e os testes), pela ordem em que aparecem: cada página
+ *  tem só algumas, sempre por esta ordem. «agentes» e «cresce» saíram da página principal a 31/10 e ficam para os
+ *  números de antes. E os campos e passos do formulário. */
+export const SITE_SECTIONS: [string, string][] = [["inicio", "Topo"], ["video", "Vídeo"], ["promessas", "Promessas"], ["dia", "Um dia com a Clara"], ["agentes", "Os nove agentes"], ["copiloto", "CRM"], ["como", "Exemplos"], ["cenas", "Exemplos"], ["diagnostico", "Diagnóstico"], ["teste", "Teste"], ["saber", "Perguntas"], ["planos", "Planos"], ["mais-info", "Mais informação"], ["cresce", "A carteira vai contigo"], ["passos", "Três passos"], ["lista", "Reserva"], ["mais", "Ver tudo o que a Clara faz"]];
+export const FORM_FIELDS: Record<string, string> = { nome: "Nome", email: "Email", telefone: "Telefone", agencia: "Agência", plano: "Plano", indicado_por: "Quem falou da Clara", consentimento: "Autorização de contacto" };
+/** Desde 31/10 a inscrição é um ecrã com os dados e outro com o resumo da pré-reserva; «prioridades» só aparece com as
+ *  pré-reservas esgotadas (lista de espera). Antes perguntava uma coisa de cada vez, a começar no nome. */
+export const FORM_STEPS: [string, string][] = [["dados", "Formulário"], ["enviada", "Inscrição enviada"], ["prioridades", "Prioridades"], ["pre-reserva", "Ecrã da pré-reserva"], ["pagamento", "Abriram o pagamento"], ["paga", "Pagaram"]];
+const OLD_STEPS: Record<string, string> = { nome: "dados" };
+const PAYMENT_STEPS = new Set(["pagamento", "paga"]);
+export const sectionName = (id: string) => SITE_SECTIONS.find(([s]) => s === id)?.[1] ?? id;
+
+/** Ordem das secções de uma página: as conhecidas pela ordem do site, e as outras no fim, pela posição média. */
+export function sectionOrder(rows: { seccao: string; posicao?: number | null }[]): [string, string][] {
+  const seen = new Set(rows.map((r) => r.seccao));
+  const known = SITE_SECTIONS.filter(([id]) => seen.has(id));
+  const others = rows.filter((r) => !SITE_SECTIONS.some(([id]) => id === r.seccao))
+    .sort((a, b) => (n0(a.posicao) || 99) - (n0(b.posicao) || 99)).map((r): [string, string] => [r.seccao, r.seccao]);
+  return [...known, ...others];
+}
+
+export interface StepRow { step: string; name: string; reached: number; shareOfStart: number | null; left: number | null; shareLeft: number | null; form: boolean }
+
+/** Passos da inscrição: quantos chegaram, a parte das que começaram e quantos saíram ali. `form` é o que vem antes do pagamento. */
+export function stepFunnel(rows: { passo: string; chegaram: number }[]): StepRow[] {
+  const by = new Map<string, number>();
+  for (const r of rows) { const id = OLD_STEPS[r.passo] ?? r.passo; by.set(id, (by.get(id) ?? 0) + n0(r.chegaram)); }
+  const steps = FORM_STEPS.filter(([id]) => id !== "prioridades" || (by.get(id) ?? 0) > 0);
+  const start = by.get("dados") ?? 0;
+  return steps.map(([id, name], i) => {
+    const reached = by.get(id) ?? 0;
+    const next = i + 1 < steps.length ? by.get(steps[i + 1][0]) ?? 0 : null;
+    const left = next === null ? null : Math.max(0, reached - next);
+    return { step: id, name, reached, shareOfStart: start ? reached / start : null, left, shareLeft: reached && left !== null ? left / reached : null, form: !PAYMENT_STEPS.has(id) };
+  });
+}
+
+export type ConclusionState = "ok" | "aviso" | "mau" | "espera";
+export interface Conclusion { topic: string; state: ConclusionState; text: string; action: string }
+
+/** Conclusões sobre a página e os cliques, com o que mudar na comunicação (as mesmas regras do painel da campanha). */
+export function siteConclusions(input: {
+  metaClicksByDay: { date: string; clicks: number }[];
+  funnel: { fonte: string; aberturas: number; qualificadas: number; iniciadas: number; enviadas: number; pagamentos: number; pagas: number }[];
+  /** visitas da Meta por dia em todo o site: os cliques da campanha levam a várias páginas */
+  days: { dia: string; aberturas_meta: number }[];
+  sections: { seccao: string; alcance: number }[];
+  errors: { campo: string; vezes: number }[];
+  times: { seccao: string; saidas: number; tempo_medio: number }[];
+  visit: { visitas: number; tempo_medio: number; tempo_mediano: number } | null;
+  steps: StepRow[];
+}): Conclusion[] {
+  const MIN = 30;
+  const pct = (v: number) => `${Math.round(v * 100)}%`;
+  const secs = (v: number) => { const s = Math.round(v); return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`; };
+  const t = input.funnel.find((r) => r.fonte === "Todas");
+  const visits = n0(t?.aberturas), stay = n0(t?.qualificadas), start = n0(t?.iniciadas), sent = n0(t?.enviadas), pay = n0(t?.pagamentos), paid = n0(t?.pagas);
+  const reach = new Map(input.sections.map((r) => [r.seccao, n0(r.alcance)]));
+  const out: Conclusion[] = [];
+
+  if (visits < MIN) {
+    out.push({ topic: "Página", state: "espera", text: `Há ${visits} visitas medidas na página. As conclusões sobre a página aparecem a partir de ${MIN}.`, action: "Deixar a campanha correr com a página publicada." });
+  } else {
+    const t6 = stay / visits;
+    out.push({ topic: "Primeira impressão", state: t6 >= 0.6 ? "ok" : t6 >= 0.4 ? "aviso" : "mau", text: `${pct(t6)} das visitas ficam pelo menos 6 segundos; ${pct(1 - t6)} saem antes.`,
+      action: t6 >= 0.6 ? "O topo confirma o que o anúncio promete: manter o título e o primeiro ecrã." : "O topo não confirma o anúncio: repetir no título a promessa dos anúncios que trazem mais gente e mostrar a Clara logo no primeiro ecrã." });
+    // Pelas secções desta página, por ordem. Quem chegou a uma secção mais abaixo também passou pelas de cima
+    const order = sectionOrder(input.sections);
+    const reached = order.map(([id]) => reach.get(id) ?? 0);
+    for (let i = reached.length - 2; i >= 0; i--) reached[i] = Math.max(reached[i], reached[i + 1]);
+    let worst: { at: string; next: string; loss: number } | null = null;
+    for (let i = 1; i < order.length; i++) {
+      const before = reached[i - 1], after = reached[i];
+      if (before > 0 && (!worst || (before - after) / before > worst.loss)) worst = { at: order[i - 1][1], next: order[i][1], loss: (before - after) / before };
+    }
+    if (worst) out.push({ topic: "Onde param", state: worst.loss >= 0.35 ? "aviso" : "ok", text: `A maior perda é em «${worst.at}»: ${pct(worst.loss)} de quem lá chega não passa para «${worst.next}».`,
+      action: worst.loss >= 0.35 ? `Encurtar «${worst.at}» ou mudar a mensagem dessa parte, e pôr antes dela um botão para a reserva.` : "Nenhuma secção trava muita gente: a ordem da página funciona." });
+    if (stay >= MIN) {
+      const ti = start / stay, list = reach.get("lista") ?? 0;
+      out.push({ topic: "Interesse", state: ti >= 0.12 ? "ok" : ti >= 0.05 ? "aviso" : "mau", text: `${pct(ti)} de quem fica começa a inscrição; ${pct(list)} das visitas chegam ao formulário.`,
+        action: ti >= 0.12 ? "A oferta convence: manter." : list < 0.3 ? "Pouca gente chega ao formulário, no fim da página: pôr um botão para a reserva no topo e a meio." : "Chegam ao formulário mas não começam: deixar mais claro o que ganham ao reservar e encurtar o formulário." });
+    }
+  }
+  if (start >= 10) {
+    const te = sent / start, top = input.errors[0];
+    const field = top ? FORM_FIELDS[top.campo] ?? top.campo : null;
+    out.push({ topic: "Formulário", state: te >= 0.75 ? "ok" : te >= 0.5 ? "aviso" : "mau", text: `${pct(te)} de quem começa a inscrição envia-a.${field ? ` O campo que mais falha é «${field}» (${n0(top!.vezes)} vezes).` : ""}`,
+      action: te >= 0.75 ? "O formulário não trava ninguém." : `O formulário trava gente: tirar os campos que não fazem falta para a primeira chamada${field ? ` e explicar melhor «${field}».` : "."}` });
+  }
+  if (pay >= 5) {
+    const tp = paid / pay;
+    out.push({ topic: "Pagamento", state: tp >= 0.5 ? "ok" : tp >= 0.3 ? "aviso" : "mau", text: `${pct(tp)} de quem abre o pagamento paga a pré-reserva.`,
+      action: tp >= 0.5 ? "O pagamento corre bem." : "Muitos abrem o pagamento e não pagam: repetir na página de pagamento o que estão a pagar e o que acontece a seguir." });
+  }
+  const v = input.visit;
+  if (v && n0(v.visitas) >= MIN) {
+    const med = n0(v.tempo_mediano);
+    out.push({ topic: "Tempo na página", state: med >= 45 ? "ok" : med >= 20 ? "aviso" : "mau", text: `Metade das visitas fica menos de ${secs(med)} com a página à vista; a média é ${secs(n0(v.tempo_medio))}.`,
+      action: med >= 45 ? "Há tempo para ler: o que falta está mais abaixo (interesse, formulário)." : "Pouca gente lê além do topo: o primeiro ecrã tem de dizer logo o que a Clara faz, para quem é e levar ao botão da reserva." });
+    const total = input.times.reduce((s, r) => s + n0(r.saidas), 0);
+    const top = [...input.times].sort((a, b) => n0(b.saidas) - n0(a.saidas))[0];
+    if (top && total > 0) {
+      const name = sectionName(top.seccao), share = n0(top.saidas) / total;
+      out.push({ topic: "Onde saem", state: top.seccao === "lista" ? "ok" : share >= 0.4 ? "mau" : "aviso", text: `A secção onde mais gente sai da página é «${name}»: ${pct(share)} das saídas, com ${secs(n0(top.tempo_medio))} à vista em média.`,
+        action: top.seccao === "lista" ? "Saem no fim, depois de ver tudo: o que conta é o formulário e o pagamento." : top.seccao === "inicio" ? "Saem logo no topo: o anúncio e o primeiro ecrã não estão a dizer a mesma coisa." : `Rever «${name}»: é aí que a página perde mais gente. Encurtar ou trocar a mensagem dessa parte.` });
+    }
+  }
+  // Os passos antes do pagamento (o pagamento tem a sua conclusão)
+  const form = input.steps.filter((p) => p.form && p.reached >= 5 && p.shareLeft !== null);
+  if ((input.steps[0]?.reached ?? 0) >= 10 && form.length) {
+    const worst = [...form].sort((a, b) => (b.shareLeft ?? 0) - (a.shareLeft ?? 0))[0];
+    const sl = worst.shareLeft ?? 0;
+    const fix: Record<string, string> = {
+      dados: "O formulário trava gente: tirar o que não faz falta para a primeira chamada e explicar porque se pede cada campo.",
+      enviada: "Enviam a inscrição e não chegam ao ecrã seguinte: confirmar que o ecrã da pré-reserva aparece depois de enviar.",
+      "pre-reserva": "Veem o resumo da pré-reserva e não abrem o pagamento: deixar mais claro o que pagam agora e o que recebem.",
+    };
+    out.push({ topic: "Inscrição", state: sl >= 0.3 ? "mau" : sl >= 0.15 ? "aviso" : "ok", text: `O passo onde mais gente desiste é «${worst.name}»: ${pct(sl)} de quem lá chega não continua (${worst.left} de ${worst.reached}).`,
+      action: sl >= 0.15 ? fix[worst.step] ?? `Simplificar o passo «${worst.name}»: explicar porque se pede, ou torná-lo opcional.` : "A inscrição não trava ninguém." });
+  }
+  // Cliques da Meta contra visitas da Meta, só nos dias medidos inteiros (a partir do segundo)
+  const first = input.days[0]?.dia ?? null;
+  const measured = new Map(input.days.filter((r) => first && r.dia > first).map((r) => [r.dia, n0(r.aberturas_meta)]));
+  const clicks = input.metaClicksByDay.filter((r) => measured.has(r.date.slice(0, 10))).reduce((s, r) => s + n0(r.clicks), 0);
+  const arrived = [...measured.values()].reduce((s, x) => s + x, 0);
+  if (clicks >= MIN) {
+    const r = arrived / clicks;
+    out.push({ topic: "Cliques da Meta", state: r >= 0.6 ? "ok" : r >= 0.35 ? "aviso" : "mau", text: `Nos dias medidos inteiros, ${clicks} cliques deram ${arrived} visitas medidas no site (${pct(r)}).`,
+      action: r >= 0.6 ? "Os cliques são de pessoas que chegam à página." : "Muitos cliques não chegam a visita: acidentais, de robôs ou de quem não respondeu ao aviso de cookies. Ver na tabela os anúncios com CTR alto e poucas leads e tirar o Audience Network dos posicionamentos." });
+  } else {
+    out.push({ topic: "Cliques da Meta", state: "espera", text: `Há ${clicks} cliques da Meta em dias inteiros medidos no site. A comparação com as visitas aparece a partir de ${MIN}.`, action: "Esperar pelo primeiro dia inteiro com a página publicada." });
+  }
+  const weight: Record<ConclusionState, number> = { mau: 0, aviso: 1, espera: 2, ok: 3 };
+  return out.sort((a, b) => weight[a.state] - weight[b.state]);
+}
+
+/** Referência de um anúncio para juntar o utm_content da inscrição ao nome do anúncio na Meta:
+ *  «CLA · N3 · LISTA-FSBO · /angariacao/» e «cla_n3_lista-fsbo» dão os dois «cla_n3_lista_fsbo». */
+export type AdCreativeLinks = {
+  url_tags?: string;
+  object_story_spec?: { link_data?: { link?: string }; video_data?: { call_to_action?: { value?: { link?: string } } } };
+  asset_feed_spec?: { link_urls?: { website_url?: string; url_tags?: string }[] };
+};
+
+/** O utm_content da ligação de um anúncio (parâmetros de URL, ligação do criativo ou do conjunto de recursos), ou null. */
+export function utmContentOf(creative: AdCreativeLinks | null | undefined): string | null {
+  if (!creative) return null;
+  const candidates = [
+    creative.url_tags,
+    creative.object_story_spec?.link_data?.link,
+    creative.object_story_spec?.video_data?.call_to_action?.value?.link,
+    ...(creative.asset_feed_spec?.link_urls ?? []).flatMap((l) => [l.url_tags, l.website_url]),
+  ];
+  for (const c of candidates) {
+    if (!c) continue;
+    const query = c.includes("?") ? c.slice(c.indexOf("?") + 1) : c;
+    const value = new URLSearchParams(query.split("#")[0]).get("utm_content");
+    if (value && !value.includes("{{")) return value;
+  }
+  return null;
+}
+
+export function adRef(value: string | null | undefined): string {
+  const parts = String(value ?? "").split("·").map((p) => p.trim()).filter((p) => p && !p.startsWith("/"));
+  return parts.join("_").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+}

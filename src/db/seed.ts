@@ -1,13 +1,19 @@
 // Dados de EXEMPLO para desenvolvimento e demonstração. Não correr em produção.
 // Cria os dois softwares reais (N5 Clara e N5 Imobiliário) com a sua configuração base e,
 // à volta deles, contas, feedback, campanhas e eventos inventados, marcados como exemplo.
+import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db, schema, sql } from "./index";
 
-if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) {
+// Nunca em produção: nem com NODE_ENV=production nem no deploy de produção da Netlify (CONTEXT=production).
+// No build (--if-empty) sai sem erro, para não partir o deploy; corrido à mão, falha.
+if ((process.env.NODE_ENV === "production" || process.env.CONTEXT === "production") && !process.argv.includes("--force")) {
   console.error("Recusado: o seed cria dados de exemplo. Em produção usa só scripts/create-user.ts.");
-  process.exit(1);
+  process.exit(process.argv.includes("--if-empty") ? 0 : 1);
 }
+
+// Palavra-passe dos logins de exemplo: DEMO_PASSWORD (12+ caracteres) ou uma gerada agora. Nunca fica escrita no código.
+const demoPassword = (process.env.DEMO_PASSWORD ?? "").length >= 12 ? process.env.DEMO_PASSWORD! : randomBytes(12).toString("base64url");
 
 const day = 864e5;
 const now = Date.now();
@@ -50,7 +56,7 @@ async function main() {
     },
   ]);
 
-  const pass = await bcrypt.hash("exemplo-n5-2026!", 12);
+  const pass = await bcrypt.hash(demoPassword, 12);
   const [socio] = await db.insert(schema.users).values({ email: "socio@exemplo.n5", name: "Sócio (exemplo)", role: "socio", passwordHash: pass }).returning();
   const [colab] = await db.insert(schema.users).values({ email: "colaborador@exemplo.n5", name: "Colaborador (exemplo)", role: "colaborador", passwordHash: pass }).returning();
   await db.insert(schema.userSoftwares).values({ userId: colab.id, softwareId: "sw_clara" });
@@ -198,7 +204,28 @@ async function main() {
   }
 
   // ---- Roadmap, PRs, deploys, versões
-  // Sem tarefas de roadmap de exemplo: o Pipeline começa vazio.
+  const items = [
+    { sw: "sw_clara", code: "CLA-1", title: "Marcar visitas por voz", phase: "in_progress" as const, impact: 3, reach: 120, confidence: 80, effort: 5, agent: false, sprint: "S44", version: "0.9.0", due: -2 },
+    { sw: "sw_clara", code: "CLA-2", title: "Resumo da chamada na ficha da lead", phase: "testing_beta" as const, impact: 2, reach: 150, confidence: 90, effort: 2, agent: true, sprint: "S44", version: "0.9.0", due: 2 },
+    { sw: "sw_clara", code: "CLA-3", title: "Vocabulário de moradas para a transcrição", phase: "sprint_backlog" as const, impact: 2, reach: 80, confidence: 50, effort: 3, agent: false, sprint: null, version: null, due: null },
+    { sw: "sw_clara", code: "CLA-4", title: "Relatório semanal por WhatsApp", phase: "sprint_backlog" as const, impact: 1, reach: 60, confidence: 60, effort: 3, agent: true, sprint: null, version: null, due: 0 },
+    { sw: "sw_imobiliario", code: "IMO-1", title: "Distribuição de leads por zona", phase: "sprint_backlog" as const, impact: 3, reach: 15, confidence: 70, effort: 8, agent: false, sprint: null, version: null, due: 10 },
+  ];
+  for (const it of items) {
+    const [row] = await db.insert(schema.roadmapItems).values({
+      code: it.code, softwareId: it.sw, title: it.title, phase: it.phase, impact: it.impact, reach: it.reach, confidence: it.confidence, effort: it.effort,
+      agent: it.agent, sprint: it.sprint, version: it.version, ownerUserId: ["in_progress", "testing_beta"].includes(it.phase) ? socio.id : null,
+      acceptanceCriteria: ["in_progress", "testing_beta"].includes(it.phase) ? "- Funciona em telemóvel\n- Regista o evento de produto" : null,
+      productEvents: it.phase === "testing_beta" ? ["call.completed", "call.analysis_viewed"] : [], origin: "comunidade",
+      dueDate: it.due == null ? null : new Date(now + it.due * day).toISOString().slice(0, 10),
+    }).returning();
+    if (it.code === "CLA-1") await sql`update feedback set roadmap_item_id = ${row.id} where title like 'Poder marcar visitas%'`;
+    if (it.code === "IMO-1") await sql`update feedback set roadmap_item_id = ${row.id} where title like 'Distribuir leads%'`;
+    if (it.code === "CLA-2") {
+      await db.insert(schema.pullRequests).values({ id: "4ImprovementsPortugal/n5-clara#41", roadmapItemId: row.id, softwareId: "sw_clara", repo: "4ImprovementsPortugal/n5-clara", number: 41,
+        title: "CLA-2 resumo da chamada na ficha", author: "n5-agent[bot]", isAgent: true, state: "merged", createdAt: ago(3), reviewedAt: ago(2.5), mergedAt: ago(2) });
+    }
+  }
   await db.insert(schema.pullRequests).values({ id: "4ImprovementsPortugal/n5-clara#44", softwareId: "sw_clara", repo: "4ImprovementsPortugal/n5-clara", number: 44,
     title: "CLA-4 rascunho do relatório por WhatsApp", author: "n5-agent[bot]", isAgent: true, state: "open", createdAt: ago(4) });
   for (let d = 0; d < 20; d++) {
@@ -247,7 +274,7 @@ async function main() {
     { module: "campanhas", softwareId: "sw_imobiliario", severity: "aviso", title: "Custo por registo alto: N5 Imobiliário", detail: "Acima de 40,00 € nos últimos dois dias", dedupeKey: "ex-3" },
   ]);
 
-  console.log("Dados de exemplo criados. Entra com socio@exemplo.n5 / exemplo-n5-2026! (ou colaborador@exemplo.n5).");
+  console.log(`Dados de exemplo criados. Entra com socio@exemplo.n5 (ou colaborador@exemplo.n5) e ${process.env.DEMO_PASSWORD ? "a palavra-passe de DEMO_PASSWORD" : `a palavra-passe ${demoPassword}, gerada agora (define DEMO_PASSWORD para a fixar)`}.`);
   await sql.end();
 }
 

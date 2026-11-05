@@ -1,5 +1,5 @@
 {
-  "id": "493bca93-f2bd-4193-a434-332a0d0022cc",
+  "id": "a88b2512-276c-4264-9fcc-0ce0ae8d6114",
   "prevId": "afaf2857-660e-4547-87e4-a794a68c0ffa",
   "version": "7",
   "dialect": "postgresql",
@@ -1559,6 +1559,116 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.meta_consents": {
+      "name": "meta_consents",
+      "schema": "",
+      "columns": {
+        "email_hash": {
+          "name": "email_hash",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "software_id": {
+          "name": "software_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lead_event_id": {
+          "name": "lead_event_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fbp": {
+          "name": "fbp",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fbc": {
+          "name": "fbc",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "client_ip": {
+          "name": "client_ip",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "user_agent": {
+          "name": "user_agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source_url": {
+          "name": "source_url",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "consented_at": {
+          "name": "consented_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "purchase_sent_at": {
+          "name": "purchase_sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "meta_consents_expires_idx": {
+          "name": "meta_consents_expires_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "meta_consents_software_id_softwares_id_fk": {
+          "name": "meta_consents_software_id_softwares_id_fk",
+          "tableFrom": "meta_consents",
+          "tableTo": "softwares",
+          "columnsFrom": [
+            "software_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": true
+    },
     "public.mrr_monthly": {
       "name": "mrr_monthly",
       "schema": "",
@@ -2448,99 +2558,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.roadmap_comments": {
-      "name": "roadmap_comments",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "serial",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "item_id": {
-          "name": "item_id",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "body": {
-          "name": "body",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "roadmap_comments_item_idx": {
-          "name": "roadmap_comments_item_idx",
-          "columns": [
-            {
-              "expression": "item_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "roadmap_comments_item_id_roadmap_items_id_fk": {
-          "name": "roadmap_comments_item_id_roadmap_items_id_fk",
-          "tableFrom": "roadmap_comments",
-          "tableTo": "roadmap_items",
-          "columnsFrom": [
-            "item_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "roadmap_comments_user_id_users_id_fk": {
-          "name": "roadmap_comments_user_id_users_id_fk",
-          "tableFrom": "roadmap_comments",
-          "tableTo": "users",
-          "columnsFrom": [
-            "user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.roadmap_items": {
       "name": "roadmap_items",
       "schema": "",
@@ -2590,14 +2607,6 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'ideia'"
-        },
-        "priority": {
-          "name": "priority",
-          "type": "roadmap_priority",
-          "typeSchema": "public",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'normal'"
         },
         "impact": {
           "name": "impact",
@@ -3500,16 +3509,6 @@
         "testes",
         "staging",
         "producao"
-      ]
-    },
-    "public.roadmap_priority": {
-      "name": "roadmap_priority",
-      "schema": "public",
-      "values": [
-        "urgente",
-        "alta",
-        "normal",
-        "baixa"
       ]
     },
     "public.rule_audience": {

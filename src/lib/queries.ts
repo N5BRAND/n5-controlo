@@ -1,5 +1,6 @@
 import "server-only";
-import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
+import { cache } from "react";
+import { and, desc, eq, gte, inArray, lt, lte, ne, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import type { CurrentUser } from "./auth";
 import type { Range } from "./filters";
@@ -7,8 +8,11 @@ import { cacCents, mrrMovements, monthKey, previousMonthKey, riceScore, type Mrr
 
 export const usdEurRate = () => Number(process.env.USD_EUR_RATE ?? "0.87");
 
+// Os softwares mudam pouco e quase todas as páginas os pedem: uma leitura por pedido.
+const allSoftwares = cache(() => db.select().from(schema.softwares).orderBy(schema.softwares.createdAt));
+
 export async function softwaresFor(user: CurrentUser) {
-  const all = await db.select().from(schema.softwares).orderBy(schema.softwares.createdAt);
+  const all = await allSoftwares();
   return user.softwareIds === "all" ? all : all.filter((s) => (user.softwareIds as string[]).includes(s.id));
 }
 
@@ -16,35 +20,35 @@ const ACTIVE = ["active", "past_due"] as const;
 
 // ---------------- Painel geral ----------------
 export async function overview(range: Range) {
-  const sws = await db.select().from(schema.softwares).orderBy(schema.softwares.createdAt);
-  const subs = await db.select().from(schema.subscriptions);
   const thisMonth = monthKey(new Date()), lastMonth = previousMonthKey(thisMonth);
-  const mrrPrev = await db.select({ sw: schema.mrrMonthly.softwareId, total: sql<number>`sum(${schema.mrrMonthly.mrrCents})::int` })
-    .from(schema.mrrMonthly).where(eq(schema.mrrMonthly.month, lastMonth)).groupBy(schema.mrrMonthly.softwareId);
 
   const spendRows = (from: Date, to: Date) => db.select({ sw: schema.campaignDaily.softwareId, spend: sql<number>`sum(${schema.campaignDaily.spendCents})::int` })
     .from(schema.campaignDaily)
     .where(and(gte(schema.campaignDaily.date, from.toISOString().slice(0, 10)), lt(schema.campaignDaily.date, to.toISOString().slice(0, 10))))
     .groupBy(schema.campaignDaily.softwareId);
-  const spendNow = await spendRows(range.from, new Date(range.to.getTime() + 864e5));
-  const spendPrev = await spendRows(range.prevFrom, range.prevTo);
-
-  // Novos clientes pagantes = primeira fatura paga dentro do período
-  const firstPaid = await db.select({ sw: schema.invoices.softwareId, org: schema.invoices.organizationId, first: sql<Date>`min(${schema.invoices.issuedAt})` })
-    .from(schema.invoices).where(eq(schema.invoices.status, "paid")).groupBy(schema.invoices.softwareId, schema.invoices.organizationId);
-  const newPaying = (sw: string, from: Date, to: Date) => firstPaid.filter((f) => f.sw === sw && new Date(f.first) >= from && new Date(f.first) < to).length;
-
   const since30 = new Date(Date.now() - 30 * 864e5);
-  const costs = await db.select({ sw: schema.usageRecords.softwareId, usd: sql<number>`sum(${schema.usageRecords.costUsd})::float` })
-    .from(schema.usageRecords).where(gte(schema.usageRecords.occurredAt, since30)).groupBy(schema.usageRecords.softwareId);
 
-  const fb = await db.select({ sw: schema.feedback.softwareId, type: schema.feedback.type, severity: schema.feedback.severity, n: sql<number>`count(*)::int` })
-    .from(schema.feedback).where(sql`${schema.feedback.status} not in ('lancado','recusado','duplicado')`)
-    .groupBy(schema.feedback.softwareId, schema.feedback.type, schema.feedback.severity);
-
-  const rel = await db.select().from(schema.releases).orderBy(desc(schema.releases.createdAt));
-  const al = await db.select({ sw: schema.alerts.softwareId, sev: schema.alerts.severity, n: sql<number>`count(*)::int` })
-    .from(schema.alerts).where(ne(schema.alerts.status, "resolvido")).groupBy(schema.alerts.softwareId, schema.alerts.severity);
+  // Leituras independentes em paralelo: o tempo da página passa a ser o da mais lenta, não a soma.
+  const [sws, subs, mrrPrev, spendNow, spendPrev, firstPaid, costs, fb, rel, al] = await Promise.all([
+    allSoftwares(),
+    db.select().from(schema.subscriptions),
+    db.select({ sw: schema.mrrMonthly.softwareId, total: sql<number>`sum(${schema.mrrMonthly.mrrCents})::int` })
+      .from(schema.mrrMonthly).where(eq(schema.mrrMonthly.month, lastMonth)).groupBy(schema.mrrMonthly.softwareId),
+    spendRows(range.from, new Date(range.to.getTime() + 864e5)),
+    spendRows(range.prevFrom, range.prevTo),
+    // Novos clientes pagantes = primeira fatura paga dentro do período
+    db.select({ sw: schema.invoices.softwareId, org: schema.invoices.organizationId, first: sql<Date>`min(${schema.invoices.issuedAt})` })
+      .from(schema.invoices).where(eq(schema.invoices.status, "paid")).groupBy(schema.invoices.softwareId, schema.invoices.organizationId),
+    db.select({ sw: schema.usageRecords.softwareId, usd: sql<number>`sum(${schema.usageRecords.costUsd})::float` })
+      .from(schema.usageRecords).where(gte(schema.usageRecords.occurredAt, since30)).groupBy(schema.usageRecords.softwareId),
+    db.select({ sw: schema.feedback.softwareId, type: schema.feedback.type, severity: schema.feedback.severity, n: sql<number>`count(*)::int` })
+      .from(schema.feedback).where(sql`${schema.feedback.status} not in ('lancado','recusado','duplicado')`)
+      .groupBy(schema.feedback.softwareId, schema.feedback.type, schema.feedback.severity),
+    db.select().from(schema.releases).orderBy(desc(schema.releases.createdAt)),
+    db.select({ sw: schema.alerts.softwareId, sev: schema.alerts.severity, n: sql<number>`count(*)::int` })
+      .from(schema.alerts).where(ne(schema.alerts.status, "resolvido")).groupBy(schema.alerts.softwareId, schema.alerts.severity),
+  ]);
+  const newPaying = (sw: string, from: Date, to: Date) => firstPaid.filter((f) => f.sw === sw && new Date(f.first) >= from && new Date(f.first) < to).length;
 
   const rows = sws.map((sw) => {
     const mine = subs.filter((s) => s.softwareId === sw.id);
@@ -171,14 +175,16 @@ export async function softwareCosts(softwareIds: string[]) {
   if (!softwareIds.length) return { byProvider: [], accounts: 0, months: [] as string[] };
   const thisMonth = monthKey(new Date());
   const months = [previousMonthKey(previousMonthKey(thisMonth)), previousMonthKey(thisMonth), thisMonth];
-  const provider = await db.select().from(schema.providerCosts)
-    .where(and(inArray(schema.providerCosts.softwareId, softwareIds), inArray(schema.providerCosts.month, months)));
   const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-  const usage = await db.select({ provider: schema.usageRecords.provider, usd: sql<number>`sum(${schema.usageRecords.costUsd})::float` })
-    .from(schema.usageRecords).where(and(inArray(schema.usageRecords.softwareId, softwareIds), gte(schema.usageRecords.occurredAt, monthStart)))
-    .groupBy(schema.usageRecords.provider);
-  const [acc] = await db.select({ n: sql<number>`count(distinct ${schema.subscriptions.organizationId})::int` })
-    .from(schema.subscriptions).where(and(inArray(schema.subscriptions.softwareId, softwareIds), inArray(schema.subscriptions.status, ["active", "past_due"])));
+  const [provider, usage, [acc]] = await Promise.all([
+    db.select().from(schema.providerCosts)
+      .where(and(inArray(schema.providerCosts.softwareId, softwareIds), inArray(schema.providerCosts.month, months))),
+    db.select({ provider: schema.usageRecords.provider, usd: sql<number>`sum(${schema.usageRecords.costUsd})::float` })
+      .from(schema.usageRecords).where(and(inArray(schema.usageRecords.softwareId, softwareIds), gte(schema.usageRecords.occurredAt, monthStart)))
+      .groupBy(schema.usageRecords.provider),
+    db.select({ n: sql<number>`count(distinct ${schema.subscriptions.organizationId})::int` })
+      .from(schema.subscriptions).where(and(inArray(schema.subscriptions.softwareId, softwareIds), inArray(schema.subscriptions.status, ["active", "past_due"]))),
+  ]);
   const providers = [...new Set([...provider.map((p) => p.provider), ...usage.map((u) => u.provider)])].sort();
   const byProvider = providers.map((p) => ({
     provider: p,
@@ -192,7 +198,7 @@ export async function softwareCosts(softwareIds: string[]) {
 export async function campaigns(softwareIds: string[], range: Range) {
   if (!softwareIds.length) return { rows: [], funnel: null };
   const from = range.from.toISOString().slice(0, 10), to = new Date(range.to.getTime() + 864e5).toISOString().slice(0, 10);
-  const rows = await db.select({
+  const [rows, people, paid] = await Promise.all([db.select({
     sw: schema.campaignDaily.softwareId, campaignId: schema.campaignDaily.campaignId, name: schema.campaignDaily.campaignName,
     spend: sql<number>`sum(${schema.campaignDaily.spendCents})::int`, impressions: sql<number>`sum(${schema.campaignDaily.impressions})::int`,
     clicks: sql<number>`sum(${schema.campaignDaily.clicks})::int`, leads: sql<number>`sum(${schema.campaignDaily.leads})::int`,
@@ -200,13 +206,14 @@ export async function campaigns(softwareIds: string[], range: Range) {
   }).from(schema.campaignDaily)
     .where(and(inArray(schema.campaignDaily.softwareId, softwareIds), gte(schema.campaignDaily.date, from), lt(schema.campaignDaily.date, to)))
     .groupBy(schema.campaignDaily.softwareId, schema.campaignDaily.campaignId, schema.campaignDaily.campaignName)
-    .orderBy(desc(sql`sum(${schema.campaignDaily.spendCents})`));
-
+    .orderBy(desc(sql`sum(${schema.campaignDaily.spendCents})`)),
   // Funil: registos → ativação → pagante (pessoas registadas no período)
-  const people = await db.select().from(schema.persons)
-    .where(and(inArray(schema.persons.softwareId, softwareIds), gte(schema.persons.signedUpAt, range.from)));
-  const paidOrgs = new Set((await db.select({ org: schema.invoices.organizationId }).from(schema.invoices)
-    .where(and(eq(schema.invoices.status, "paid"), inArray(schema.invoices.softwareId, softwareIds)))).map((r) => r.org));
+  db.select().from(schema.persons)
+    .where(and(inArray(schema.persons.softwareId, softwareIds), gte(schema.persons.signedUpAt, range.from))),
+  db.select({ org: schema.invoices.organizationId }).from(schema.invoices)
+    .where(and(eq(schema.invoices.status, "paid"), inArray(schema.invoices.softwareId, softwareIds))),
+  ]);
+  const paidOrgs = new Set(paid.map((r) => r.org));
   const payingByCampaign = new Map<string, number>();
   const signupsByCampaign = new Map<string, number>();
   for (const p of people) {
@@ -254,18 +261,20 @@ export async function revenue(softwareIds: string[]) {
 
 export async function accounts(softwareIds: string[]) {
   if (!softwareIds.length) return [];
-  const subs = await db.select({ s: schema.subscriptions, o: schema.organizations })
-    .from(schema.subscriptions).innerJoin(schema.organizations, eq(schema.organizations.id, schema.subscriptions.organizationId))
-    .where(inArray(schema.subscriptions.softwareId, softwareIds)).orderBy(desc(schema.subscriptions.mrrCents));
   const monthStart = new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1));
-  const usage = await db.select({ org: schema.usageRecords.organizationId, sw: schema.usageRecords.softwareId, usd: sql<number>`sum(${schema.usageRecords.costUsd})::float` })
-    .from(schema.usageRecords).where(and(inArray(schema.usageRecords.softwareId, softwareIds), gte(schema.usageRecords.occurredAt, monthStart)))
-    .groupBy(schema.usageRecords.organizationId, schema.usageRecords.softwareId);
-  const lastSeen = await db.select({ org: schema.productEvents.organizationId, last: sql<Date>`max(${schema.productEvents.occurredAt})`, people: sql<number>`count(distinct ${schema.productEvents.personId})::int` })
-    .from(schema.productEvents).where(and(inArray(schema.productEvents.softwareId, softwareIds), gte(schema.productEvents.occurredAt, new Date(Date.now() - 30 * 864e5))))
-    .groupBy(schema.productEvents.organizationId);
-  const failed = await db.select({ org: schema.invoices.organizationId, n: sql<number>`count(*)::int` }).from(schema.invoices)
-    .where(eq(schema.invoices.status, "failed")).groupBy(schema.invoices.organizationId);
+  const [subs, usage, lastSeen, failed] = await Promise.all([
+    db.select({ s: schema.subscriptions, o: schema.organizations })
+      .from(schema.subscriptions).innerJoin(schema.organizations, eq(schema.organizations.id, schema.subscriptions.organizationId))
+      .where(inArray(schema.subscriptions.softwareId, softwareIds)).orderBy(desc(schema.subscriptions.mrrCents)),
+    db.select({ org: schema.usageRecords.organizationId, sw: schema.usageRecords.softwareId, usd: sql<number>`sum(${schema.usageRecords.costUsd})::float` })
+      .from(schema.usageRecords).where(and(inArray(schema.usageRecords.softwareId, softwareIds), gte(schema.usageRecords.occurredAt, monthStart)))
+      .groupBy(schema.usageRecords.organizationId, schema.usageRecords.softwareId),
+    db.select({ org: schema.productEvents.organizationId, last: sql<Date>`max(${schema.productEvents.occurredAt})`, people: sql<number>`count(distinct ${schema.productEvents.personId})::int` })
+      .from(schema.productEvents).where(and(inArray(schema.productEvents.softwareId, softwareIds), gte(schema.productEvents.occurredAt, new Date(Date.now() - 30 * 864e5))))
+      .groupBy(schema.productEvents.organizationId),
+    db.select({ org: schema.invoices.organizationId, n: sql<number>`count(*)::int` }).from(schema.invoices)
+      .where(eq(schema.invoices.status, "failed")).groupBy(schema.invoices.organizationId),
+  ]);
   return subs.map(({ s, o }) => {
     const costCents = Math.round((usage.find((u) => u.org === o.id && u.sw === s.softwareId)?.usd ?? 0) * usdEurRate() * 100);
     const seen = lastSeen.find((l) => l.org === o.id);
@@ -277,23 +286,24 @@ export async function accounts(softwareIds: string[]) {
 
 export async function usageStats(softwareIds: string[], range: Range) {
   if (!softwareIds.length) return null;
-  const [act] = await db.select({
+  const [[act], features, [time], [orgCount]] = await Promise.all([db.select({
     dau: sql<number>`count(distinct ${schema.productEvents.personId}) filter (where ${schema.productEvents.occurredAt} >= now() - interval '1 day')::int`,
     wau: sql<number>`count(distinct ${schema.productEvents.personId}) filter (where ${schema.productEvents.occurredAt} >= now() - interval '7 days')::int`,
     mau: sql<number>`count(distinct ${schema.productEvents.personId}) filter (where ${schema.productEvents.occurredAt} >= now() - interval '30 days')::int`,
-  }).from(schema.productEvents).where(and(inArray(schema.productEvents.softwareId, softwareIds), gte(schema.productEvents.occurredAt, new Date(Date.now() - 30 * 864e5))));
-  const features = await db.select({
+  }).from(schema.productEvents).where(and(inArray(schema.productEvents.softwareId, softwareIds), gte(schema.productEvents.occurredAt, new Date(Date.now() - 30 * 864e5)))),
+  db.select({
     feature: schema.productEvents.feature, uses: sql<number>`count(*)::int`, orgs: sql<number>`count(distinct ${schema.productEvents.organizationId})::int`,
   }).from(schema.productEvents)
     .where(and(inArray(schema.productEvents.softwareId, softwareIds), gte(schema.productEvents.occurredAt, range.from), sql`${schema.productEvents.feature} is not null`))
-    .groupBy(schema.productEvents.feature).orderBy(desc(sql`count(distinct ${schema.productEvents.organizationId})`));
+    .groupBy(schema.productEvents.feature).orderBy(desc(sql`count(distinct ${schema.productEvents.organizationId})`)),
   // Tempo ativo: cada sinal de 60 s vale um minuto
-  const [time] = await db.select({
+  db.select({
     minutes: sql<number>`count(*)::int`, people: sql<number>`count(distinct ${schema.productEvents.personId})::int`,
     days: sql<number>`count(distinct (${schema.productEvents.personId}, date(${schema.productEvents.occurredAt})))::int`,
-  }).from(schema.productEvents).where(and(inArray(schema.productEvents.softwareId, softwareIds), eq(schema.productEvents.name, "session.heartbeat"), gte(schema.productEvents.occurredAt, range.from)));
-  const [orgCount] = await db.select({ n: sql<number>`count(distinct ${schema.subscriptions.organizationId})::int` }).from(schema.subscriptions)
-    .where(and(inArray(schema.subscriptions.softwareId, softwareIds), inArray(schema.subscriptions.status, ["active", "past_due", "trialing"])));
+  }).from(schema.productEvents).where(and(inArray(schema.productEvents.softwareId, softwareIds), eq(schema.productEvents.name, "session.heartbeat"), gte(schema.productEvents.occurredAt, range.from))),
+  db.select({ n: sql<number>`count(distinct ${schema.subscriptions.organizationId})::int` }).from(schema.subscriptions)
+    .where(and(inArray(schema.subscriptions.softwareId, softwareIds), inArray(schema.subscriptions.status, ["active", "past_due", "trialing"]))),
+  ]);
   return { ...act, features, minutesPerPersonDay: time.days ? time.minutes / time.days : null, activeOrgs: orgCount.n };
 }
 
@@ -306,4 +316,96 @@ export async function trials(softwareIds: string[]) {
   const ended = all.filter((r) => r.s.trialEnd && r.s.trialEnd < new Date());
   const converted = ended.filter((r) => ["active", "past_due"].includes(r.s.status));
   return { active, conversion: ended.length ? converted.length / ended.length : null };
+}
+
+// ---------------- Orçamentos ABO ----------------
+/** Campanhas ligadas às regras ABO, com as decisões da última análise e as mudanças anteriores. */
+export async function aboOverview(softwareIds: string[]) {
+  if (!softwareIds.length) return [];
+  const campaigns = await db.select().from(schema.metaAboCampaigns)
+    .where(inArray(schema.metaAboCampaigns.softwareId, softwareIds)).orderBy(schema.metaAboCampaigns.createdAt);
+  const out = [];
+  // Uma leitura por campanha, todas ao mesmo tempo (antes: uma a seguir à outra)
+  const recentByCampaign = await Promise.all(campaigns.map((c) => db.select().from(schema.metaBudgetDecisions)
+    .where(eq(schema.metaBudgetDecisions.campaignId, c.campaignId))
+    .orderBy(desc(schema.metaBudgetDecisions.createdAt), schema.metaBudgetDecisions.id).limit(120)));
+  for (const [i, c] of campaigns.entries()) {
+    const recent = recentByCampaign[i];
+    const lastRun = recent[0]?.runId;
+    out.push({
+      ...c,
+      last: recent.filter((d) => d.runId === lastRun).sort((a, b) => a.id - b.id),
+      history: recent.filter((d) => d.runId !== lastRun && d.action !== "manter").slice(0, 30),
+    });
+  }
+  return out;
+}
+
+// ---------------- Monitorização de campanhas ----------------
+/** Última leitura da Meta, por qualquer via (ao abrir as campanhas, no botão ou de 6 em 6 horas). */
+export async function lastMetaSync(): Promise<Date | null> {
+  const [r] = await db.select({ at: sql<string | null>`max(${schema.metaCampaignTotals.updatedAt})` }).from(schema.metaCampaignTotals);
+  return r?.at ? new Date(r.at) : null;
+}
+
+/** Campanhas com números (da sincronização da Meta), a mais recente primeiro. */
+export async function monitoredCampaigns(softwareIds: string[]) {
+  if (!softwareIds.length) return [];
+  return db.select({
+    campaignId: schema.campaignDaily.campaignId, name: schema.campaignDaily.campaignName, softwareId: schema.campaignDaily.softwareId,
+    first: sql<string>`min(${schema.campaignDaily.date})::text`, last: sql<string>`max(${schema.campaignDaily.date})::text`,
+    spend: sql<number>`sum(${schema.campaignDaily.spendCents})::int`,
+  }).from(schema.campaignDaily)
+    .where(inArray(schema.campaignDaily.softwareId, softwareIds))
+    .groupBy(schema.campaignDaily.campaignId, schema.campaignDaily.campaignName, schema.campaignDaily.softwareId)
+    .orderBy(desc(sql`max(${schema.campaignDaily.date})`), desc(sql`sum(${schema.campaignDaily.spendCents})`));
+}
+
+/** Uma campanha desde o início, ou só entre dois dias (incluídos): por anúncio, por dia e o orçamento diário (se estiver nas regras ABO). */
+export async function campaignMonitor(campaignId: string, softwareIds: string[], periodo?: { de: string; ate: string }) {
+  if (!softwareIds.length) return null;
+  const where = and(eq(schema.campaignDaily.campaignId, campaignId), inArray(schema.campaignDaily.softwareId, softwareIds),
+    periodo ? gte(schema.campaignDaily.date, periodo.de) : undefined, periodo ? lte(schema.campaignDaily.date, periodo.ate) : undefined);
+  // Compras na Stripe: no período escolhido, ou desde o primeiro dia da campanha
+  const paidWhen = periodo
+    ? and(gte(schema.stripePurchases.paidAt, new Date(`${periodo.de}T00:00:00Z`)), lt(schema.stripePurchases.paidAt, new Date(new Date(`${periodo.ate}T00:00:00Z`).getTime() + 864e5)))
+    : sql`${schema.stripePurchases.paidAt} >= (select min(${schema.campaignDaily.date}) from ${schema.campaignDaily} where ${schema.campaignDaily.campaignId} = ${campaignId})`;
+  const sums = {
+    spendCents: sql<number>`sum(${schema.campaignDaily.spendCents})::int`, impressions: sql<number>`sum(${schema.campaignDaily.impressions})::int`,
+    clicks: sql<number>`sum(${schema.campaignDaily.clicks})::int`, leads: sql<number>`sum(${schema.campaignDaily.leads})::int`,
+    landingViews: sql<number>`sum(${schema.campaignDaily.landingViews})::int`, purchases: sql<number>`sum(${schema.campaignDaily.purchases})::int`,
+    checkouts: sql<number>`sum(${schema.campaignDaily.checkouts})::int`,
+  };
+  const ads = await db.select({
+    adName: schema.campaignDaily.adName, adsetName: sql<string>`max(${schema.campaignDaily.adsetName})`, adId: sql<string | null>`max(${schema.campaignDaily.adId})`, sw: sql<string>`max(${schema.campaignDaily.softwareId})`, ...sums,
+    maxFrequency: sql<number | null>`max(${schema.campaignDaily.frequency})::float`,
+    lastSpend: sql<string | null>`max(case when ${schema.campaignDaily.spendCents} > 0 then ${schema.campaignDaily.date} end)::text`,
+  }).from(schema.campaignDaily).where(where).groupBy(schema.campaignDaily.adName).orderBy(desc(sql`sum(${schema.campaignDaily.spendCents})`));
+  if (!ads.length) return null;
+  const sw = ads[0].sw;
+  const [days, [abo], adInfo, [campaignTotals], stripeByAd] = await Promise.all([
+    db.select({ date: sql<string>`${schema.campaignDaily.date}::text`, ...sums })
+      .from(schema.campaignDaily).where(where).groupBy(schema.campaignDaily.date).orderBy(schema.campaignDaily.date),
+    db.select().from(schema.metaAboCampaigns).where(eq(schema.metaAboCampaigns.campaignId, campaignId)),
+    // Estado e formato de todos os anúncios da campanha, também os que ainda não gastaram
+    db.select().from(schema.metaAds).where(and(eq(schema.metaAds.campaignId, campaignId), inArray(schema.metaAds.softwareId, softwareIds))),
+    db.select().from(schema.metaCampaignTotals).where(eq(schema.metaCampaignTotals.campaignId, campaignId)),
+    // Compras na Stripe, pelo anúncio da inscrição de cada pessoa (null: sem inscrição ligada)
+    db.select({ adRef: schema.signupAttributions.adRef, n: sql<number>`count(*)::int` })
+      .from(schema.stripePurchases)
+      .leftJoin(schema.signupAttributions, and(eq(schema.signupAttributions.emailHash, schema.stripePurchases.emailHash), eq(schema.signupAttributions.softwareId, schema.stripePurchases.softwareId)))
+      .where(and(eq(schema.stripePurchases.softwareId, sw), paidWhen))
+      .groupBy(schema.signupAttributions.adRef),
+  ]);
+  const totals = ads.reduce((a, r) => ({
+    spendCents: a.spendCents + r.spendCents, impressions: a.impressions + r.impressions, clicks: a.clicks + r.clicks,
+    leads: a.leads + r.leads, landingViews: a.landingViews + r.landingViews, purchases: a.purchases + r.purchases, checkouts: a.checkouts + r.checkouts,
+  }), { spendCents: 0, impressions: 0, clicks: 0, leads: 0, landingViews: 0, purchases: 0, checkouts: 0 });
+  return {
+    ads, days, totals, adInfo, reach: campaignTotals?.reach ?? null, frequency: campaignTotals?.frequency ? Number(campaignTotals.frequency) : null,
+    dailyBudgetCents: abo?.dailyBudgetCents ?? null, first: days[0]?.date ?? null, last: days[days.length - 1]?.date ?? null,
+    softwareId: sw ?? null,
+    stripeByAd: new Map(stripeByAd.filter((r) => r.adRef).map((r) => [r.adRef!, r.n])),
+    stripeTotal: stripeByAd.reduce((s, r) => s + r.n, 0),
+  };
 }

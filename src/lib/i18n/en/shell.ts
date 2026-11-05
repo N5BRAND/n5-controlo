@@ -82,4 +82,9 @@ export const shell: Record<string, string> = {
   "Sócio": "Partner",
   "Direção de operações": "Operations management",
   "Colaborador": "Collaborator",
+  "Personalizado": "Custom",
+  "De": "From",
+  "Até": "To",
+  "Aplicar": "Apply",
+  "Desde o início": "Since the start",
 };

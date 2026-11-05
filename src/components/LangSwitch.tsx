@@ -20,7 +20,7 @@ export function LangSwitch({ dark = false }: { dark?: boolean }) {
         return (
           <button key={o.lang} type="button" disabled={pending} lang={o.lang} title={o.name} aria-pressed={active}
             onClick={() => { if (!active) start(() => setLang(o.lang)); }}
-            className={`px-2.5 py-1 transition-colors ${active ? "bg-brand text-ink" : dark ? "text-white/70 hover:bg-white/10" : "text-muted hover:bg-canvas"}`}>
+            className={`px-2.5 py-1 transition-colors ${active ? "bg-gold text-ink" : dark ? "text-white/70 hover:bg-white/10" : "text-muted hover:bg-canvas"}`}>
             {o.label}
           </button>
         );

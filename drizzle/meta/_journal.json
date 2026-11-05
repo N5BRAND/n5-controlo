@@ -40,15 +40,36 @@
     {
       "idx": 5,
       "version": "7",
-      "when": 1793046801780,
-      "tag": "0005_pipeline_prioridade_comentarios",
+      "when": 1793415222286,
+      "tag": "0005_api_conversoes_meta",
       "breakpoints": true
     },
     {
       "idx": 6,
       "version": "7",
-      "when": 1793830310887,
-      "tag": "0006_pipeline_novos_estagios",
+      "when": 1793415237631,
+      "tag": "0006_orcamentos_abo",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793420202749,
+      "tag": "0007_monitorizacao_meta",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793421119515,
+      "tag": "0008_compras_stripe",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793884798637,
+      "tag": "0009_pipeline_estagios_prioridade_comentarios",
       "breakpoints": true
     }
   ]

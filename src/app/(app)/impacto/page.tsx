@@ -30,8 +30,7 @@ export default async function Impacto({ searchParams }: { searchParams: Promise<
   const tabs = [{ key: "resumo", label: t("Resumo") }, { key: "tarefas", label: t("Tempo poupado por tarefa") }, { key: "leads", label: t("Leads e negócio") }, { key: "contas", label: t("Por conta") }, { key: "pressupostos", label: t("Pressupostos") }]
     .map((tb) => ({ ...tb, href: withParams("/impacto", sp, { vista: tb.key }) }));
   const swName = (id: string) => sws.find((s) => s.id === id)?.name ?? id;
-  const data = await loadImpact(ids, filters.range);
-  const settings = await settingsFor(ids);
+  const [data, settings] = await Promise.all([loadImpact(ids, filters.range), settingsFor(ids)]);
 
   return (
     <>

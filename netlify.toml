@@ -2,9 +2,20 @@
 # Base de dados: DATABASE_URL de um Postgres na UE (por exemplo Supabase em Frankfurt).
 # Variáveis a definir no painel (Site configuration › Environment variables), nunca aqui:
 #   DATABASE_URL (ligação via pooler), SESSION_SECRET (32+ caracteres), CRON_SECRET, APP_URL (o endereço do site)
-#   DEMO_DATA=true enquanto for uma demonstração com dados de exemplo
+# Produção: aplica as migrações e compila. Não corre o seed: é o sistema real e não leva
+# dados de exemplo. O primeiro utilizador cria-se com `npm run user:create`.
 [build]
-  command = "npm run db:migrate && npm run db:seed -- --if-empty && npm run build"
+  command = "npm run db:migrate && npm run build"
 
 [build.environment]
   NODE_VERSION = "22"
+
+# Pré-visualizações dos PR e deploys de outros ramos só compilam a app.
+# Recebem a mesma DATABASE_URL da produção, por isso não podem correr migrações:
+# a 31/10, a pré-visualização do PR #11 aplicou a sua migração na base de
+# produção antes da revisão. As migrações só correm no deploy do `main`.
+[context.deploy-preview]
+  command = "npm run build"
+
+[context.branch-deploy]
+  command = "npm run build"

@@ -1,4 +1,5 @@
 import "server-only";
+import { cache } from "react";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
@@ -19,7 +20,8 @@ export function canSee(role: TeamRole, module: Module): boolean {
 
 export interface CurrentUser extends SessionPayload { softwareIds: string[] | "all" }
 
-export async function getCurrentUser(): Promise<CurrentUser | null> {
+// Uma vez por pedido: o layout e a página pedem o utilizador, e cada ida à base de dados custa uma viagem.
+export const getCurrentUser = cache(async (): Promise<CurrentUser | null> => {
   const jar = await cookies();
   const session = await verifySession(jar.get(SESSION_COOKIE)?.value);
   if (!session) return null;
@@ -28,7 +30,7 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   if (user.role !== "colaborador") return { ...session, role: user.role, softwareIds: "all" };
   const rows = await db.select().from(schema.userSoftwares).where(eq(schema.userSoftwares.userId, user.id));
   return { ...session, role: user.role, softwareIds: rows.map((r) => r.softwareId) };
-}
+});
 
 export async function requireUser(module: Module): Promise<CurrentUser> {
   const user = await getCurrentUser();

@@ -273,13 +273,115 @@ export const campaignDaily = pgTable("campaign_daily", {
   campaignName: text("campaign_name").notNull(),
   adsetName: text("adset_name").notNull().default(""),
   adName: text("ad_name").notNull().default(""),
+  adsetId: text("adset_id"),
+  adId: text("ad_id"),
   date: date("date").notNull(),
   spendCents: integer("spend_cents").notNull().default(0),
   impressions: integer("impressions").notNull().default(0),
   clicks: integer("clicks").notNull().default(0),
   leads: integer("leads").notNull().default(0),
+  landingViews: integer("landing_views").notNull().default(0),
+  purchases: integer("purchases").notNull().default(0),
+  checkouts: integer("checkouts").notNull().default(0), // foram ao pagamento (InitiateCheckout do píxel)
   frequency: numeric("frequency", { precision: 6, scale: 2 }),
 }, (t) => [uniqueIndex("campaign_daily_uniq").on(t.campaignId, t.adsetName, t.adName, t.date)]);
+
+// Estado e formato de cada anúncio, lidos na sincronização da Meta (o que campaign_daily não tem).
+export const metaAds = pgTable("meta_ads", {
+  adId: text("ad_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  campaignId: text("campaign_id").notNull(),
+  name: text("name").notNull(),
+  adsetName: text("adset_name"),
+  status: text("status"), // effective_status da Meta: ACTIVE, PAUSED, PENDING_REVIEW, DISAPPROVED, ...
+  format: text("format"), // imagem | video
+  adRef: text("ad_ref"), // utm_content da ligação do anúncio, normalizado (adRef); junta as compras da Stripe ao anúncio
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("meta_ads_campaign_idx").on(t.campaignId)]);
+
+// Compras confirmadas pela Stripe nos Payment Links ligados (pré-reservas), com o email cifrado para as juntar
+// à inscrição e ao anúncio de onde a pessoa veio.
+export const stripePurchases = pgTable("stripe_purchases", {
+  sessionId: text("session_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  emailHash: text("email_hash"),
+  amountCents: integer("amount_cents").notNull().default(0),
+  currency: text("currency").notNull().default("eur"),
+  paymentLink: text("payment_link"),
+  paidAt: timestamp("paid_at", { withTimezone: true }).notNull(),
+}, (t) => [index("stripe_purchases_sw_idx").on(t.softwareId, t.paidAt)]).enableRLS();
+
+// De que página e de que anúncio veio cada inscrição (a primeira de cada pessoa), para saber que anúncios trazem compras.
+// Só o email cifrado, a página e o anúncio (utm_content normalizado); nada vai para fora.
+export const signupAttributions = pgTable("signup_attributions", {
+  emailHash: text("email_hash").notNull(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  page: text("page"),
+  adRef: text("ad_ref"),
+  signedUpAt: timestamp("signed_up_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.emailHash, t.softwareId] })]).enableRLS();
+
+// Totais de cada campanha desde o início (o alcance e a frequência não se somam por dia).
+export const metaCampaignTotals = pgTable("meta_campaign_totals", {
+  campaignId: text("campaign_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  since: date("since"),
+  until: date("until"),
+  spendCents: integer("spend_cents").notNull().default(0),
+  impressions: integer("impressions").notNull().default(0),
+  reach: integer("reach").notNull().default(0),
+  frequency: numeric("frequency", { precision: 6, scale: 2 }),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+// API de Conversões da Meta: quem se inscreveu num site N5 e aceitou os cookies de marketing.
+// Serve para enviar à Meta a compra quando a Stripe a confirmar, com os mesmos identificadores do anúncio.
+// Sem consentimento não há linha; cada linha apaga-se ao fim de 90 dias (tarefa meta-sync).
+export const metaConsents = pgTable("meta_consents", {
+  emailHash: text("email_hash").primaryKey(), // SHA-256 do email normalizado, igual ao que vai para a Meta
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  leadEventId: text("lead_event_id"),
+  fbp: text("fbp"),
+  fbc: text("fbc"),
+  clientIp: text("client_ip"),
+  userAgent: text("user_agent"),
+  sourceUrl: text("source_url"),
+  consentedAt: timestamp("consented_at", { withTimezone: true }).notNull().defaultNow(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  purchaseSentAt: timestamp("purchase_sent_at", { withTimezone: true }),
+}, (t) => [index("meta_consents_expires_idx").on(t.expiresAt)]).enableRLS(); // sem acesso pela API pública do Supabase; a app usa a ligação direta
+
+// ---------- Orçamentos ABO (campanhas da Meta com orçamento por conjunto) ----------
+export const metaAboCampaigns = pgTable("meta_abo_campaigns", {
+  campaignId: text("campaign_id").primaryKey(),
+  softwareId: text("software_id").notNull().references(() => softwares.id),
+  accountId: text("account_id").notNull(), // act_…
+  name: text("name").notNull(),
+  dailyBudgetCents: integer("daily_budget_cents").notNull(), // o total do dia que as regras repartem
+  aboSince: date("abo_since").notNull(), // os números contam a partir deste dia
+  auto: boolean("auto").notNull().default(true), // desligado: as regras não correm
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const metaBudgetDecisions = pgTable("meta_budget_decisions", {
+  id: serial("id").primaryKey(),
+  runId: text("run_id").notNull(),
+  moment: text("moment").notNull(), // manha | noite
+  campaignId: text("campaign_id").notNull(),
+  adsetId: text("adset_id"),
+  adsetName: text("adset_name"),
+  adName: text("ad_name"),
+  action: text("action").notNull(), // manter | subir | descer | pausar | aviso
+  fromCents: integer("from_cents"),
+  toCents: integer("to_cents"),
+  metric: text("metric"), // compras | leads | visitas | cliques
+  costCents: integer("cost_cents"),
+  reason: text("reason").notNull(),
+  incoming: text("incoming"), // o criativo que entra numa troca
+  applied: boolean("applied").notNull().default(false),
+  errorCode: text("error_code"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("meta_budget_decisions_campaign").on(t.campaignId, t.createdAt)]);
 
 // ---------- Alertas ----------
 export const alerts = pgTable("alerts", {

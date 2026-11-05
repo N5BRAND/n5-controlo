@@ -1,7 +1,7 @@
 "use client";
 import { useActionState } from "react";
 import { useT } from "@/lib/i18n/client";
-import { createApiKey, saveSoftware, saveUser } from "./actions";
+import { createApiKey, removeExampleData, saveSoftware, saveUser } from "./actions";
 
 type Software = {
   id: string; name: string; code: string; status: string; metaAdAccountId: string | null; metaPixelId: string | null; githubRepos: string[];
@@ -83,6 +83,19 @@ export function ApiKeyForm({ softwares, scopes }: { softwares: { id: string; nam
         </div>
       ) : null}
       <button className="btn btn-primary" disabled={pending}>{t("Criar chave")}</button>
+    </form>
+  );
+}
+
+export function ExampleDataForm({ total }: { total: number }) {
+  const t = useT();
+  const [state, action, pending] = useActionState(removeExampleData, undefined);
+  return (
+    <form action={action} className="space-y-3">
+      <div className="max-w-xs"><label className="label" htmlFor="confirmar-exemplo">{t("Escreve APAGAR para confirmar")}</label>
+        <input id="confirmar-exemplo" name="confirmar" className="input num" autoComplete="off" disabled={!total} /></div>
+      <Result state={state} />
+      <button className="btn btn-primary" disabled={pending || !total}>{pending ? t("A apagar…") : t("Apagar dados de exemplo")}</button>
     </form>
   );
 }

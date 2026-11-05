@@ -42,7 +42,7 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
       <PageHeader title={vista === "notificacoes" ? tr("Notificações do Pipeline") : vista === "historico" ? tr("Histórico do Pipeline") : tr("Pipeline de desenvolvimento")} lead={vista === "notificacoes" ? tr("Prazos das tarefas: ultrapassados, a vencer e em curso sem data.") : vista === "historico" ? tr("Tudo o que se criou, alterou, comentou ou apagou nas tarefas, com quem fez e quando.") : tr("Tarefas do desenvolvimento por estágio, com o custo de cada software.")}>
         {(vista === "quadro" || vista === "lista") ? <Link href={withParams("/pipeline", sp, { vista: "novo" })} className="btn btn-primary">{tr("+ Nova tarefa")}</Link> : null}
       </PageHeader>
-      {vista === "notificacoes" || vista === "historico" ? null : <Tabs items={tabs} active={vista} underline />}
+      {vista === "notificacoes" || vista === "historico" ? null : <Tabs items={tabs} active={vista} />}
       {vista === "quadro" || vista === "lista" ? <Tarefas ids={ids} vista={vista} sp={sp} userId={user.sub} team={team} swName={swName} /> : null}
       {vista === "historico" ? <History softwareIds={user.softwareIds} /> : null}
       {vista === "backlog" && full ? <Backlog ids={ids} swName={swName} /> : null}

@@ -1,4 +1,4 @@
-# Demonstração online no Render: https://render.com/deploy?repo=https://github.com/4improvementsportugal-ops/n5-controlo
+# Demonstração online no Render: https://render.com/deploy?repo=https://github.com/n5-brand/n5-controlo
 # Cria a app e uma base de dados Postgres em Frankfurt, com dados de EXEMPLO.
 services:
   - type: web
@@ -22,8 +22,9 @@ services:
         generateValue: true
       - key: DEMO_DATA
         value: "true"
-      - key: NEXT_PUBLIC_DEMO_DATA
-        value: "true"
+      # Palavra-passe dos logins de exemplo: gerada pelo Render (Environment), nunca no repositório
+      - key: DEMO_PASSWORD
+        generateValue: true
 databases:
   - name: n5-db
     plan: free

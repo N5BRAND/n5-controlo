@@ -79,7 +79,7 @@ def main() -> None:
         page = browser.new_page(viewport={"width": 1400, "height": 900})
         page.goto(f"{ORIGIN}{BASE}/login")
         page.fill("#email", "socio@exemplo.n5")
-        page.fill("#password", "exemplo-n5-2026!")
+        page.fill("#password", os.environ["DEMO_PASSWORD"])  # a mesma do seed; nunca no repositório
         page.click("button:has-text('Entrar')")
         page.wait_for_url(re.compile(r".*/demo/?$"))
 

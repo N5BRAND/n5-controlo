@@ -5,7 +5,8 @@ import { SCOPES } from "@/lib/apikeys";
 import { fmtDate, LABELS } from "@/lib/format";
 import { PageHeader, Pill, Tabs } from "@/components/ui";
 import { getT } from "@/lib/i18n/server";
-import { ApiKeyForm, SoftwareForm, UserForm } from "./forms";
+import { ApiKeyForm, ExampleDataForm, SoftwareForm, UserForm } from "./forms";
+import { countExampleData } from "@/lib/exampleDataDb";
 import { revokeApiKey, toggleUser } from "./actions";
 
 export default async function Definicoes({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
@@ -14,7 +15,7 @@ export default async function Definicoes({ searchParams }: { searchParams: Promi
   const sp = await searchParams;
   const vista = typeof sp.vista === "string" ? sp.vista : "softwares";
   const sws = await db.select().from(schema.softwares).orderBy(schema.softwares.createdAt);
-  const tabs = [{ key: "softwares", label: t("Softwares") }, { key: "utilizadores", label: t("Utilizadores") }, { key: "chaves", label: t("Chaves de API") }, { key: "ligacoes", label: t("Ligações") }]
+  const tabs = [{ key: "softwares", label: t("Softwares") }, { key: "utilizadores", label: t("Utilizadores") }, { key: "chaves", label: t("Chaves de API") }, { key: "ligacoes", label: t("Ligações") }, { key: "exemplo", label: t("Dados de exemplo") }]
     .map((tb) => ({ ...tb, href: `/definicoes?vista=${tb.key}` }));
   return (
     <>
@@ -29,6 +30,7 @@ export default async function Definicoes({ searchParams }: { searchParams: Promi
       {vista === "utilizadores" ? <Users softwares={sws} /> : null}
       {vista === "chaves" ? <Keys softwares={sws} /> : null}
       {vista === "ligacoes" ? <Connections /> : null}
+      {vista === "exemplo" ? <ExampleData /> : null}
     </>
   );
 }
@@ -94,5 +96,27 @@ async function Connections() {
         })}</tbody></table>
       <p className="text-xs text-muted mt-3">{t("Os segredos ficam nas variáveis de ambiente do servidor (AWS Secrets Manager), nunca na base de dados.")}</p>
     </section>
+  );
+}
+
+async function ExampleData() {
+  const t = await getT();
+  const counts = await countExampleData();
+  const total = counts.reduce((s, c) => s + c.rows, 0);
+  return (
+    <div className="grid lg:grid-cols-[1fr_420px] gap-4">
+      <section className="card overflow-x-auto">
+        <h2 className="h2">{t("O que é de exemplo")}</h2>
+        <p className="text-sm text-muted mb-3">{t("Dados inventados pelo seed da demonstração: contas, pessoas, subscrições, faturas, eventos, feedback, roadmap, deploys, custos, campanhas, chat, alertas e os dois logins de exemplo. Os softwares, os pressupostos do Impacto e tudo o que entrou pelas ligações reais ficam.")}</p>
+        <table className="tbl"><thead><tr><th>{t("Onde")}</th><th className="text-right">{t("Registos")}</th></tr></thead>
+          <tbody>{counts.map((c) => <tr key={c.table}><td>{t(c.label)}</td><td className="num text-right">{c.rows.toLocaleString("pt-PT")}</td></tr>)}
+            <tr><td className="font-semibold">{t("Total")}</td><td className="num text-right font-semibold">{total.toLocaleString("pt-PT")}</td></tr></tbody></table>
+      </section>
+      <section className="card h-fit">
+        <h2 className="h2">{t("Apagar dados de exemplo")}</h2>
+        <p className="text-sm text-muted mb-3">{t("Apaga de uma vez tudo o que está na tabela ao lado e fica registado na auditoria. Não se desfaz. Só sócios.")}</p>
+        <ExampleDataForm total={total} />
+      </section>
+    </div>
   );
 }

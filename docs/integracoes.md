@@ -5,7 +5,7 @@ Todas as ligações verificam a assinatura de cada pedido e guardam o pedido em 
 ## Stripe
 
 - Endpoint: `https://<domínio>/api/webhooks/stripe`
-- Eventos: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`.
+- Eventos: `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `checkout.session.completed`, `checkout.session.async_payment_succeeded`, `invoice.paid`, `invoice.payment_failed`.
 - Segredo: `STRIPE_WEBHOOK_SECRET`.
 - Convenções obrigatórias:
   - Cada subscrição leva `metadata.n5_software` (ex.: `sw_clara`). Opcionalmente leva `metadata.n5_org_name`.
@@ -50,9 +50,62 @@ Todas as ligações verificam a assinatura de cada pedido e guardam o pedido em 
 
 - Token de utilizador de sistema do Business Portfolio N5, com `ads_read`, em `META_ACCESS_TOKEN`.
 - Em Definições › Softwares, preencher a conta de anúncios de cada software (`act_…`).
-- `/api/cron/meta-sync` lê os últimos 28 dias ao nível do anúncio, por dia, a cada 6 horas. Também existe o botão "Sincronizar Meta agora".
+- Ao abrir Campanhas e funil, a página lê da Meta hoje e ontem antes de mostrar os números (no máximo uma leitura a cada 30 segundos; se a Meta demorar mais de 5 segundos, mostra a última leitura e diz porquê). A hora da leitura aparece ao lado do botão.
+- `/api/cron/meta-sync` recalcula os últimos 28 dias ao nível do anúncio, por dia, a cada 6 horas (a Meta ainda corrige esses dias). O botão "Recalcular 28 dias da Meta" faz o mesmo na hora.
+- As linhas gravam-se em lote: as funções da Netlify correm longe da base, e gravar linha a linha levava cerca de 20 segundos.
 - Alternativa sem token: importar o CSV exportado do Gestor de Anúncios em Campanhas e funil.
 - Atribuição: as UTMs chegam com o evento `account.signed_up` (propriedades `utm_campaign`, `fbclid`, …). O nome da campanha tem de ser igual a `utm_campaign`.
+- A sincronização guarda também os IDs do conjunto e do anúncio, as visitas à página (`landing_page_view`) e as compras do píxel.
+
+### Orçamentos ABO
+
+Regra da N5: até 1000 € por mês, cada campanha tem orçamento em cada conjunto de anúncios (ABO), com um criativo por conjunto. Acima disso passa a CBO. As regras estão em `src/lib/abo.ts` (funções puras, com testes em `tests/abo.test.ts`) e correm a partir de `src/lib/meta-abo.ts`.
+
+**Ligar uma campanha.** Em Campanhas e funil › Ligar campanha às regras ABO, indica o ID da campanha, o total do dia e o dia em que passou a ABO. Os números contam a partir desse dia. O software tem de ter a conta de anúncios nas Definições.
+
+**Quando corre.** `/api/cron/meta-budget?momento=manha` às 08:00 e `?momento=noite` às 20:00, pelas tarefas `netlify/functions/cron-meta-budget-*.mts` (em UTC). Cada corrida sincroniza os últimos 3 dias e depois decide.
+
+De manhã:
+- O anúncio que a Meta reprovou, ou que gastou 15 € sem inscrições e com visitas a 2× a média, dá lugar ao seguinte da fila. A fila são os anúncios pausados da campanha, com os do mesmo nível de consciência primeiro.
+- Entre os que já gastaram 8 €, 20% do orçamento do pior passa para o melhor.
+- O total do dia volta ao da campanha, com 3 a 10 € por conjunto.
+
+À noite:
+- Só se corta 20% a quem gastou 4 € no dia sem visitas.
+- Os anúncios reprovados são trocados.
+
+**Como se compara.** O custo compara-se pelo passo mais avançado com dados: pré-reservas pagas (3 ou mais), inscrições (5 ou mais), visitas (5 ou mais) ou, por fim, cliques.
+
+**Tokens.** Os conjuntos e os anúncios leem-se em direto com `META_ACCESS_TOKEN`. As mudanças só se fazem com `META_ADS_TOKEN_GESTAO`, um token de sistema com `ads_management`, depois de confirmar essa permissão. Sem ele, as decisões ficam só propostas. O token vai sempre no cabeçalho, nunca no endereço.
+
+**O que fica registado.**
+- Cada decisão fica em `meta_budget_decisions`, com o motivo, e aparece em Campanhas e funil.
+- Geram alertas: falhas ao aplicar, análises que falham e um token de gestão sem a permissão. As trocas de criativo ficam como informação.
+- O botão «Desligar regras» faz as regras deixarem de mexer nessa campanha.
+
+## Meta (API de Conversões)
+
+Envia à Meta, pelo servidor, as inscrições e as compras dos sites N5, para os anúncios otimizarem com dados que não dependem do navegador. Só para quem aceitou os cookies de marketing no site.
+
+- `META_CAPI_TOKEN`: token gerado no Gestor de Eventos (conjunto de dados Nº5 › Definições › API de Conversões › Gerar token de acesso). Não é o mesmo que `META_ACCESS_TOKEN`.
+- `META_PIXEL_ID`: conjunto de dados; sem variável, usa o Nº5 (`2268439390668297`).
+- `META_CAPI_TEST_CODE`: código do separador «Testar eventos», só enquanto se testa.
+- `META_CAPI_PAYMENT_LINKS`: Payment Links da Stripe que contam como compra, `plink_…:sw_…` separados por vírgulas. A pré-reserva da N5 Clara já vem predefinida.
+
+**Inscrição (Lead).** O site envia `POST /api/v1/conversions` com uma chave `events:write` ligada ao software, em todas as inscrições:
+
+```json
+{ "event": "Lead", "event_id": "o mesmo eventID do píxel", "email": "…", "source_url": "https://clara.numerocinco.pt/leads/",
+  "ad": "cla_n2_leads", "consent": true,
+  "phone": "…", "name": "…", "fbp": "_fbp", "fbc": "_fbc", "client_ip": "…", "user_agent": "…" }
+```
+
+- Sempre: o Controlo guarda em `signup_attributions` o email cifrado, a página e o anúncio (`ad`, o utm_content com que a pessoa chegou). Fica só no Controlo e serve para ligar as compras da Stripe aos anúncios.
+- Com `consent: true` (cookies de marketing aceites): guarda também o consentimento em `meta_consents` (email cifrado, identificadores do anúncio, 90 dias) e envia o Lead à Meta. A Meta junta-o ao evento do píxel pelo `event_id`, sem contar duas vezes. Com `consent: false`, o site não envia telefone, nome, IP, navegador nem `_fbp`/`_fbc`, e o Controlo responde 202 sem enviar nada à Meta.
+
+**Compra (Purchase).** Quando a Stripe confirma o pagamento de um Payment Link ligado (`checkout.session.completed` pago, ou `checkout.session.async_payment_succeeded` no Multibanco), o webhook guarda a compra em `stripe_purchases` (sessão, email cifrado, valor). Se a pessoa tiver consentimento, envia também o Purchase à Meta com o valor pago; o `event_id` é a sessão de checkout. O site deixa de enviar o Purchase pelo píxel, para não contar duas vezes.
+
+**Compras Stripe por anúncio.** Em Campanhas e funil, a coluna «Compras Stripe» junta cada compra à inscrição com o mesmo email e conta-a no anúncio cujo utm_content (lido da ligação do anúncio na Meta, ou do nome `CLA · N2 · LEADS · /leads/` quando a ligação não o tem) é o da inscrição. Contam as compras desde o primeiro dia da campanha. Compras sem inscrição ligada aparecem no total e na nota da tabela, não num anúncio.
 
 ## Comunicações na app e por e-mail (módulo Reativação)
 

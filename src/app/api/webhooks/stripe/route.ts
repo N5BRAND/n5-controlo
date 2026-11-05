@@ -3,8 +3,11 @@ import { db, schema } from "@/db";
 import { verifyStripe } from "@/lib/signatures";
 import { newId, snapshotMrr } from "@/lib/core";
 import { raiseAlert } from "@/lib/alerts";
+import { purchaseFromCheckout } from "@/lib/metaCapi";
+import type { StripeCheckoutSession } from "@/lib/conversions";
 
 // Webhooks do Stripe: subscrições, checkout, faturas pagas e pagamentos falhados.
+// Checkouts pagos de um Payment Link ligado à Meta (pré-reservas) seguem como Purchase para a API de Conversões.
 // Cada subscrição leva em metadata: n5_software (ex.: sw_clara). Os preços levam em metadata
 // included_minutes e included_leads (o incluído no plano).
 
@@ -43,7 +46,7 @@ function mrrFromItems(sub: Record<string, any>): { mrr: number; plan: string; mi
   return { mrr: Math.round(mrr), plan, minutes, leads };
 }
 
-async function handle(evt: StripeEvent) {
+async function handle(evt: StripeEvent): Promise<string | void> {
   const o = evt.data.object;
   switch (evt.type) {
     case "customer.subscription.created":
@@ -74,7 +77,11 @@ async function handle(evt: StripeEvent) {
     }
     case "checkout.session.completed": {
       if (o.customer) await orgForCustomer(o.customer, o.customer_details?.name);
-      break;
+      return purchaseFromCheckout(evt.type, o as StripeCheckoutSession);
+    }
+    case "checkout.session.async_payment_succeeded": {
+      // Multibanco: a compra só conta quando a referência é paga
+      return purchaseFromCheckout(evt.type, o as StripeCheckoutSession);
     }
     case "invoice.paid":
     case "invoice.payment_failed": {
@@ -107,7 +114,8 @@ export async function POST(req: Request) {
     .onConflictDoNothing().returning({ id: schema.webhookInbox.id });
   if (!inbox) return Response.json({ received: true, duplicate: true });
   try {
-    await handle(evt);
+    const note = await handle(evt);
+    if (note) console.log(`Webhook Stripe ${evt.type} ${evt.data.object.id}: ${note}`);
     await db.update(schema.webhookInbox).set({ processedAt: new Date() }).where(eq(schema.webhookInbox.id, inbox.id));
   } catch (err) {
     await db.update(schema.webhookInbox).set({ error: String(err) }).where(eq(schema.webhookInbox.id, inbox.id));
