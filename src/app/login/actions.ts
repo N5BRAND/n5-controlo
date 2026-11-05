@@ -1,4 +1,5 @@
 "use server";
+import { getT } from "@/lib/i18n/server";
 import { randomBytes } from "node:crypto";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
@@ -26,7 +27,7 @@ export async function login(_prev: { error?: string } | undefined, form: FormDat
     account: sql<number>`count(*) filter (where ${schema.auditLog.entityId} = ${account})::int`,
     ip: sql<number>`count(*) filter (where ${schema.auditLog.actor} = ${ip})::int`,
   }).from(schema.auditLog).where(and(eq(schema.auditLog.action, "auth.login_failed"), gte(schema.auditLog.at, since)));
-  if (loginBlocked(fails)) return { error: `Demasiadas tentativas. Tenta de novo daqui a ${LOGIN_WINDOW_MINUTES} minutos.` };
+  if (loginBlocked(fails)) return { error: (await getT())("Demasiadas tentativas. Tenta de novo daqui a {n} minutos.", { n: LOGIN_WINDOW_MINUTES }) };
 
   const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email));
   const ok = await bcrypt.compare(password, user?.passwordHash ?? (await decoyHash()));
@@ -38,7 +39,7 @@ export async function login(_prev: { error?: string } | undefined, form: FormDat
         detail: `${MAX_FAILS_PER_ACCOUNT} falhas em ${LOGIN_WINDOW_MINUTES} minutos${user ? ` na conta de ${user.name}` : " num e-mail que não existe"}. Fica bloqueada ${LOGIN_WINDOW_MINUTES} minutos.`,
         dedupeKey: `login-bloqueado:${account}:${new Date().toISOString().slice(0, 13)}` });
     }
-    return { error: "E-mail ou palavra-passe errados." };
+    return { error: (await getT())("E-mail ou palavra-passe errados.") };
   }
   await audit(`user:${user.id}`, "auth.login", "user", user.id);
   const token = await signSession({ sub: user.id, name: user.name, role: user.role });

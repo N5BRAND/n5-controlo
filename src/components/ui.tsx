@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fmtPct } from "@/lib/format";
+import { getT } from "@/lib/i18n/server";
 import { KEEP_PARAMS } from "@/lib/filters";
 
 export function Kpi({ label, value, note, tone }: { label: string; value: React.ReactNode; note?: React.ReactNode; tone?: "good" | "warn" | "bad" }) {
@@ -13,11 +14,12 @@ export function Kpi({ label, value, note, tone }: { label: string; value: React.
   );
 }
 
-export function Delta({ value, invert = false, neutral = false }: { value: number | null; invert?: boolean; neutral?: boolean }) {
-  if (value === null) return <span className="text-muted">sem comparação</span>;
+export async function Delta({ value, invert = false, neutral = false }: { value: number | null; invert?: boolean; neutral?: boolean }) {
+  const t = await getT();
+  if (value === null) return <span className="text-muted">{t("sem comparação")}</span>;
   const good = invert ? value < 0 : value > 0;
   const tone = value === 0 || neutral ? "text-muted" : good ? "text-good" : "text-bad";
-  return <span className={tone}>{value > 0 ? "+" : ""}{fmtPct(value)} vs período anterior</span>;
+  return <span className={tone}>{t("{value} vs período anterior", { value: `${value > 0 ? "+" : ""}${fmtPct(value)}` })}</span>;
 }
 
 const PILL_TONES: Record<string, string> = {
@@ -30,9 +32,10 @@ export function Pill({ tone = "neutro", children }: { tone?: string; children: R
   return <span className={`pill ${PILL_TONES[tone] ?? PILL_TONES.neutro}`}>{children}</span>;
 }
 
-export function Tabs({ items, active }: { items: { key: string; label: string; href: string }[]; active: string }) {
+export async function Tabs({ items, active }: { items: { key: string; label: string; href: string }[]; active: string }) {
+  const t = await getT();
   return (
-    <nav className="flex flex-wrap gap-1 mb-4" aria-label="Vistas">
+    <nav className="flex flex-wrap gap-1 mb-4" aria-label={t("Vistas")}>
       {items.map((t) => (
         <Link key={t.key} href={t.href} className={`tab ${t.key === active ? "tab-active" : ""}`} aria-current={t.key === active ? "page" : undefined}>
           {t.label}

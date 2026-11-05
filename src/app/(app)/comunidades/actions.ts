@@ -7,11 +7,13 @@ import { allowedSoftware, requireUser } from "@/lib/auth";
 import { createFeedback, setFeedbackStatus } from "@/lib/core";
 import { audit } from "@/lib/audit";
 import { postSlackMessage } from "@/lib/slack";
+import { getT } from "@/lib/i18n/server";
 
 async function guard(id: string) {
+  const t = await getT();
   const user = await requireUser("comunidades");
   const [f] = await db.select().from(schema.feedback).where(eq(schema.feedback.id, id));
-  if (!f || !allowedSoftware(user, f.softwareId)) throw new Error("Sem acesso a este feedback.");
+  if (!f || !allowedSoftware(user, f.softwareId)) throw new Error(t("Sem acesso a este feedback."));
   return { user, f };
 }
 
@@ -48,7 +50,7 @@ export async function replyInSlack(id: string, form: FormData) {
 export async function newFeedback(form: FormData) {
   const user = await requireUser("comunidades");
   const softwareId = String(form.get("softwareId"));
-  if (!allowedSoftware(user, softwareId)) throw new Error("Sem acesso a este software.");
+  if (!allowedSoftware(user, softwareId)) throw new Error((await getT())("Sem acesso a este software."));
   const row = await createFeedback({
     softwareId, type: String(form.get("type")) as "sugestao", text: String(form.get("text") ?? ""),
     title: String(form.get("title") ?? ""), feature: String(form.get("feature") ?? "") || null,
@@ -61,7 +63,7 @@ export async function newFeedback(form: FormData) {
 export async function addBetaMember(form: FormData) {
   const user = await requireUser("comunidades");
   const softwareId = String(form.get("softwareId"));
-  if (!allowedSoftware(user, softwareId)) throw new Error("Sem acesso a este software.");
+  if (!allowedSoftware(user, softwareId)) throw new Error((await getT())("Sem acesso a este software."));
   const { newId } = await import("@/lib/core");
   const id = newId("per");
   await db.insert(schema.persons).values({

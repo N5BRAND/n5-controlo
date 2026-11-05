@@ -25,6 +25,6 @@ body { font-size: 14px; line-height: 1.45; }
   .tbl td { @apply border-b border-line px-2 py-2 align-top; }
   .tbl tr:hover td { @apply bg-canvas/60; }
   .pill { @apply inline-block rounded-full border px-2 py-0.5 text-xs font-semibold whitespace-nowrap; }
-  .tab { @apply px-3.5 py-1.5 text-sm rounded-full text-muted hover:text-ink hover:bg-ink/5; }
+  .tab { @apply shrink-0 whitespace-nowrap px-3.5 py-1.5 text-sm rounded-full text-muted hover:text-ink hover:bg-ink/5; }
   .tab-active { @apply bg-ink text-cream font-semibold hover:bg-ink hover:text-cream; }
 }

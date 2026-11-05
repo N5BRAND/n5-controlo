@@ -7,6 +7,7 @@ import { raiseAlert } from "./alerts";
 import { postSlackMessage } from "./slack";
 import { audit } from "./audit";
 import { LABELS } from "./format";
+import { ACTIVE_PHASES, EVENTS_REQUIRED_PHASES, OWNER_REQUIRED_PHASES, type Phase } from "./phases";
 import { newId } from "./ids";
 import { recordActivity } from "./engagement";
 
@@ -265,22 +266,27 @@ export async function setFeedbackStatus(id: string, status: typeof schema.feedba
 export async function nextRoadmapCode(softwareId: string): Promise<string> {
   const [sw] = await db.select().from(schema.softwares).where(eq(schema.softwares.id, softwareId));
   if (!sw) throw new Error("Software desconhecido");
-  const [r] = await db.select({ n: sql<number>`count(*)::int` }).from(schema.roadmapItems).where(eq(schema.roadmapItems.softwareId, softwareId));
-  return `${sw.code}-${r.n + 1}`;
+  // Maior número já usado neste software, incluindo as tarefas apagadas (ficam no histórico): um código apagado nunca se reutiliza
+  const rows = await db.execute(sql`
+    select coalesce(max(n), 0)::int as n from (
+      select (regexp_replace(code, '^.*-', ''))::int as n from roadmap_items where software_id = ${softwareId} and code ~ '-[0-9]+$'
+      union all
+      select (regexp_replace(after->>'code', '^.*-', ''))::int as n from audit_log
+        where entity = 'roadmap_item' and action = 'roadmap.created' and after->>'softwareId' = ${softwareId} and after->>'code' ~ '-[0-9]+$'
+    ) used`);
+  const used = Number((rows as unknown as { n: number }[])[0]?.n ?? 0);
+  return `${sw.code}-${used + 1}`;
 }
 
-const PHASE_ORDER = ["ideia", "descoberta", "design", "desenvolvimento", "testes", "staging", "producao"] as const;
-type Phase = (typeof PHASE_ORDER)[number];
 
 /** Valida as regras de mudança de fase do Pipeline. Devolve a mensagem de erro, ou null se pode avançar. */
 export function phaseGuard(item: { ownerUserId: string | null; acceptanceCriteria: string | null; productEvents: string[] }, to: Phase): string | null {
-  const idx = PHASE_ORDER.indexOf(to);
-  if (idx >= PHASE_ORDER.indexOf("desenvolvimento")) {
-    if (!item.ownerUserId) return "Para entrar em Desenvolvimento o item precisa de dono.";
-    if (!item.acceptanceCriteria?.trim()) return "Para entrar em Desenvolvimento o item precisa de critérios de aceitação.";
+  if (OWNER_REQUIRED_PHASES.includes(to)) {
+    if (!item.ownerUserId) return `Para entrar em ${LABELS.phase[to]} o item precisa de dono.`;
+    if (!item.acceptanceCriteria?.trim()) return `Para entrar em ${LABELS.phase[to]} o item precisa de critérios de aceitação.`;
   }
-  if (idx >= PHASE_ORDER.indexOf("testes") && item.productEvents.length === 0) {
-    return "Antes de Testes o item tem de declarar os eventos de produto que vai enviar.";
+  if (EVENTS_REQUIRED_PHASES.includes(to) && item.productEvents.length === 0) {
+    return `Antes de ${LABELS.phase[to]} o item tem de declarar os eventos de produto que vai enviar.`;
   }
   return null;
 }
@@ -288,7 +294,7 @@ export function phaseGuard(item: { ownerUserId: string | null; acceptanceCriteri
 /** Quando um item muda de fase, os feedbacks ligados acompanham (Comunidades, regras 4 e 5). */
 export async function syncFeedbackWithItem(itemId: number, phase: Phase, actor: string) {
   const linked = await db.select().from(schema.feedback).where(eq(schema.feedback.roadmapItemId, itemId));
-  const target = phase === "producao" ? "lancado" : ["desenvolvimento", "testes", "staging"].includes(phase) ? "em_desenvolvimento" : null;
+  const target = phase === "done" ? "lancado" : ACTIVE_PHASES.includes(phase) ? "em_desenvolvimento" : null;
   if (!target) return;
   for (const f of linked) {
     if (f.status !== target && f.status !== "recusado" && f.status !== "duplicado") {

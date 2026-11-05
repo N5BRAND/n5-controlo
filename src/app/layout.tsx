@@ -6,16 +6,19 @@ import "@fontsource/archivo/600.css";
 import "@fontsource/archivo/700.css";
 import "@fontsource/bricolage-grotesque/800.css";
 import "./globals.css";
+import { getLang, getT } from "@/lib/i18n/server";
+import { I18nProvider } from "@/lib/i18n/client";
 
-export const metadata: Metadata = {
-  title: "Controlo N5",
-  description: "Comunidades, pipeline, campanhas e receita dos softwares N5",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: "Controlo N5", description: t("Comunidades, pipeline, campanhas e receita dos softwares N5") };
+}
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const lang = await getLang();
   return (
-    <html lang="pt-PT">
-      <body className="font-sans antialiased">{children}</body>
+    <html lang={lang === "en" ? "en" : "pt-PT"}>
+      <body className="font-sans antialiased"><I18nProvider lang={lang}>{children}</I18nProvider></body>
     </html>
   );
 }

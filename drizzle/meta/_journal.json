@@ -64,6 +64,13 @@
       "when": 1793421119515,
       "tag": "0008_compras_stripe",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793884798637,
+      "tag": "0009_pipeline_estagios_prioridade_comentarios",
+      "breakpoints": true
     }
   ]
 }

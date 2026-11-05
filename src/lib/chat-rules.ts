@@ -107,8 +107,8 @@ export function detectPending(messages: ChatMsg[], items: PipelineItem[], opts: 
   for (const [id, m] of talked) {
     if (seen.has(id)) continue;
     const it = items.find((x) => x.id === id)!;
-    if (it.phase === "producao") continue;
-    const backlog = ["ideia", "descoberta"].includes(it.phase);
+    if (it.phase === "done" || it.phase === "canceled") continue;
+    const backlog = it.phase === "sprint_backlog";
     out.push({
       source: backlog ? "backlog" : "roadmap", title: `${it.code} ${it.title}`, itemId: id, since: m.createdAt, messageId: m.id,
       detail: backlog ? `falado no chat e ainda em ${it.phase}${it.owner ? "" : ", sem dono"}` : `falado no chat, ainda em ${it.phase}${it.dueDate ? `, prazo ${ptDate(it.dueDate)}` : ", sem prazo"}${it.owner ? `, ${it.owner}` : ""}`,

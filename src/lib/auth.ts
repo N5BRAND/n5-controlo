@@ -9,8 +9,9 @@ import { SESSION_COOKIE, verifySession, type SessionPayload, type TeamRole } fro
 export type Module = "painel" | "comunidades" | "pipeline" | "campanhas" | "receita" | "reativacao" | "impacto" | "chat" | "custos" | "alertas" | "definicoes";
 
 // Regras de acesso da especificação: sócios e direção de operações veem tudo;
-// colaboradores veem Comunidades, Pipeline e Chat dos softwares atribuídos (sem o ecrã de custos).
-const COLLABORATOR_MODULES: Module[] = ["comunidades", "pipeline", "chat"];
+// colaboradores veem só o Pipeline dos softwares atribuídos (sem o ecrã de custos).
+// Comunidades e Chat estão temporariamente reservados a sócios e direção de operações.
+const COLLABORATOR_MODULES: Module[] = ["pipeline"];
 
 export function canSee(role: TeamRole, module: Module): boolean {
   if (role === "socio" || role === "direcao_operacoes") return true;

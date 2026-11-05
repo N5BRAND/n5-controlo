@@ -2,6 +2,7 @@ import {
   pgTable, pgEnum, text, integer, boolean, timestamp, jsonb, numeric, date, serial, uuid,
   primaryKey, uniqueIndex, index,
 } from "drizzle-orm/pg-core";
+import { PHASES, DEFAULT_PHASE } from "../lib/phases";
 
 // ---------- Enums ----------
 export const softwareStatus = pgEnum("software_status", ["em_construcao", "beta", "lancado", "pausado"]);
@@ -14,9 +15,8 @@ export const feedbackStatus = pgEnum("feedback_status", [
   "recebido", "em_analise", "planeado", "em_desenvolvimento", "lancado", "recusado", "duplicado",
 ]);
 export const severity = pgEnum("severity", ["critico", "alto", "medio", "baixo"]);
-export const roadmapPhase = pgEnum("roadmap_phase", [
-  "ideia", "descoberta", "design", "desenvolvimento", "testes", "staging", "producao",
-]);
+export const roadmapPhase = pgEnum("roadmap_phase", PHASES);
+export const roadmapPriority = pgEnum("roadmap_priority", ["urgente", "alta", "normal", "baixa"]);
 export const roadmapOrigin = pgEnum("roadmap_origin", ["comunidade", "equipa", "cliente", "incidente"]);
 export const alertSeverity = pgEnum("alert_severity", ["critico", "aviso", "informacao"]);
 export const alertStatus = pgEnum("alert_status", ["novo", "visto", "resolvido"]);
@@ -192,7 +192,8 @@ export const roadmapItems = pgTable("roadmap_items", {
   title: text("title").notNull(),
   description: text("description"),
   origin: roadmapOrigin("origin").notNull().default("equipa"),
-  phase: roadmapPhase("phase").notNull().default("ideia"),
+  phase: roadmapPhase("phase").notNull().default(DEFAULT_PHASE),
+  priority: roadmapPriority("priority").notNull().default("normal"),
   impact: integer("impact").notNull().default(1), // 1 a 3
   reach: integer("reach").notNull().default(0), // contas estimadas
   confidence: integer("confidence").notNull().default(50), // %
@@ -208,6 +209,15 @@ export const roadmapItems = pgTable("roadmap_items", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Comentários da equipa numa tarefa do roadmap. Nada se apaga.
+export const roadmapComments = pgTable("roadmap_comments", {
+  id: serial("id").primaryKey(),
+  itemId: integer("item_id").notNull().references(() => roadmapItems.id, { onDelete: "cascade" }),
+  userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [index("roadmap_comments_item_idx").on(t.itemId, t.createdAt)]);
 
 export const pullRequests = pgTable("pull_requests", {
   id: text("id").primaryKey(), // repo#número
