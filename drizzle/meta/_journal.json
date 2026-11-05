@@ -36,6 +36,20 @@
       "when": 1793037669532,
       "tag": "0004_chat_e_prazos",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793046801780,
+      "tag": "0005_pipeline_prioridade_comentarios",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793830310887,
+      "tag": "0006_pipeline_novos_estagios",
+      "breakpoints": true
     }
   ]
 }

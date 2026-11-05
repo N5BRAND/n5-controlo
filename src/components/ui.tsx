@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { fmtPct } from "@/lib/format";
+import { getT } from "@/lib/i18n/server";
 
 export function Kpi({ label, value, note, tone }: { label: string; value: React.ReactNode; note?: React.ReactNode; tone?: "good" | "warn" | "bad" }) {
   const color = tone === "good" ? "text-good" : tone === "warn" ? "text-warn" : tone === "bad" ? "text-bad" : "";
@@ -12,11 +13,12 @@ export function Kpi({ label, value, note, tone }: { label: string; value: React.
   );
 }
 
-export function Delta({ value, invert = false, neutral = false }: { value: number | null; invert?: boolean; neutral?: boolean }) {
-  if (value === null) return <span className="text-muted">sem comparação</span>;
+export async function Delta({ value, invert = false, neutral = false }: { value: number | null; invert?: boolean; neutral?: boolean }) {
+  const t = await getT();
+  if (value === null) return <span className="text-muted">{t("sem comparação")}</span>;
   const good = invert ? value < 0 : value > 0;
   const tone = value === 0 || neutral ? "text-muted" : good ? "text-good" : "text-bad";
-  return <span className={tone}>{value > 0 ? "+" : ""}{fmtPct(value)} vs período anterior</span>;
+  return <span className={tone}>{t("{value} vs período anterior", { value: `${value > 0 ? "+" : ""}${fmtPct(value)}` })}</span>;
 }
 
 const PILL_TONES: Record<string, string> = {
@@ -29,9 +31,22 @@ export function Pill({ tone = "neutro", children }: { tone?: string; children: R
   return <span className={`pill ${PILL_TONES[tone] ?? PILL_TONES.neutro}`}>{children}</span>;
 }
 
-export function Tabs({ items, active }: { items: { key: string; label: string; href: string }[]; active: string }) {
+export async function Tabs({ items, active, underline = false }: { items: { key: string; label: string; href: string }[]; active: string; underline?: boolean }) {
+  const t = await getT();
+  if (underline) {
+    return (
+      <nav className="mb-5 flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]" aria-label={t("Vistas")}>
+        {items.map((t) => (
+          <Link key={t.key} href={t.href} aria-current={t.key === active ? "page" : undefined}
+            className={`-mb-px shrink-0 whitespace-nowrap border-b-2 px-3 py-2.5 text-sm transition-colors ${t.key === active ? "border-brand font-semibold text-ink" : "border-transparent text-muted hover:text-ink"}`}>
+            {t.label}
+          </Link>
+        ))}
+      </nav>
+    );
+  }
   return (
-    <nav className="flex flex-wrap gap-1 mb-4" aria-label="Vistas">
+    <nav className="-mx-1 mb-5 flex gap-1 overflow-x-auto px-1 pb-1 [scrollbar-width:none]" aria-label={t("Vistas")}>
       {items.map((t) => (
         <Link key={t.key} href={t.href} className={`tab ${t.key === active ? "tab-active" : ""}`} aria-current={t.key === active ? "page" : undefined}>
           {t.label}
@@ -51,7 +66,7 @@ export function Empty({ title, children }: { title: string; children?: React.Rea
 }
 
 export function Bar({ value, max, tone = "accent" }: { value: number; max: number; tone?: "accent" | "warn" | "bad" }) {
-  const color = tone === "warn" ? "bg-warn" : tone === "bad" ? "bg-bad" : "bg-accent";
+  const color = tone === "warn" ? "bg-warn" : tone === "bad" ? "bg-bad" : "bg-brand";
   const w = max > 0 ? Math.max(1, (value / max) * 100) : 0;
   return <div className="h-2.5 rounded bg-canvas border border-line overflow-hidden"><div className={`h-full ${color}`} style={{ width: `${w}%` }} /></div>;
 }

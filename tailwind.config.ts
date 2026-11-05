@@ -5,12 +5,13 @@ export default {
   theme: {
     extend: {
       colors: {
-        ink: "#18221e",
-        muted: "#5a6863",
-        line: "#d9e0dc",
+        ink: "#15181d",
+        muted: "#5f625e",
+        line: "#e1ded5",
         surface: "#ffffff",
-        canvas: "#f4f6f4",
-        accent: { DEFAULT: "#0e6a5a", soft: "#e0efea" },
+        canvas: "#f5f4f0",
+        brand: { DEFAULT: "#e9a23a", soft: "#fbeed6" },
+        accent: { DEFAULT: "#15181d", soft: "#fbeed6" },
         good: "#1d7a3b",
         warn: "#a96200",
         bad: "#b0281f",

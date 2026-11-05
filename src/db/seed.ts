@@ -198,28 +198,7 @@ async function main() {
   }
 
   // ---- Roadmap, PRs, deploys, versões
-  const items = [
-    { sw: "sw_clara", code: "CLA-1", title: "Marcar visitas por voz", phase: "desenvolvimento" as const, impact: 3, reach: 120, confidence: 80, effort: 5, agent: false, sprint: "S44", version: "0.9.0", due: -2 },
-    { sw: "sw_clara", code: "CLA-2", title: "Resumo da chamada na ficha da lead", phase: "testes" as const, impact: 2, reach: 150, confidence: 90, effort: 2, agent: true, sprint: "S44", version: "0.9.0", due: 2 },
-    { sw: "sw_clara", code: "CLA-3", title: "Vocabulário de moradas para a transcrição", phase: "ideia" as const, impact: 2, reach: 80, confidence: 50, effort: 3, agent: false, sprint: null, version: null, due: null },
-    { sw: "sw_clara", code: "CLA-4", title: "Relatório semanal por WhatsApp", phase: "descoberta" as const, impact: 1, reach: 60, confidence: 60, effort: 3, agent: true, sprint: null, version: null, due: 0 },
-    { sw: "sw_imobiliario", code: "IMO-1", title: "Distribuição de leads por zona", phase: "design" as const, impact: 3, reach: 15, confidence: 70, effort: 8, agent: false, sprint: null, version: null, due: 10 },
-  ];
-  for (const it of items) {
-    const [row] = await db.insert(schema.roadmapItems).values({
-      code: it.code, softwareId: it.sw, title: it.title, phase: it.phase, impact: it.impact, reach: it.reach, confidence: it.confidence, effort: it.effort,
-      agent: it.agent, sprint: it.sprint, version: it.version, ownerUserId: ["desenvolvimento", "testes"].includes(it.phase) ? socio.id : null,
-      acceptanceCriteria: ["desenvolvimento", "testes"].includes(it.phase) ? "- Funciona em telemóvel\n- Regista o evento de produto" : null,
-      productEvents: it.phase === "testes" ? ["call.completed", "call.analysis_viewed"] : [], origin: "comunidade",
-      dueDate: it.due == null ? null : new Date(now + it.due * day).toISOString().slice(0, 10),
-    }).returning();
-    if (it.code === "CLA-1") await sql`update feedback set roadmap_item_id = ${row.id} where title like 'Poder marcar visitas%'`;
-    if (it.code === "IMO-1") await sql`update feedback set roadmap_item_id = ${row.id} where title like 'Distribuir leads%'`;
-    if (it.code === "CLA-2") {
-      await db.insert(schema.pullRequests).values({ id: "4ImprovementsPortugal/n5-clara#41", roadmapItemId: row.id, softwareId: "sw_clara", repo: "4ImprovementsPortugal/n5-clara", number: 41,
-        title: "CLA-2 resumo da chamada na ficha", author: "n5-agent[bot]", isAgent: true, state: "merged", createdAt: ago(3), reviewedAt: ago(2.5), mergedAt: ago(2) });
-    }
-  }
+  // Sem tarefas de roadmap de exemplo: o Pipeline começa vazio.
   await db.insert(schema.pullRequests).values({ id: "4ImprovementsPortugal/n5-clara#44", softwareId: "sw_clara", repo: "4ImprovementsPortugal/n5-clara", number: 44,
     title: "CLA-4 rascunho do relatório por WhatsApp", author: "n5-agent[bot]", isAgent: true, state: "open", createdAt: ago(4) });
   for (let d = 0; d < 20; d++) {

@@ -5,6 +5,7 @@ import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { SESSION_COOKIE, sessionMaxAge, signSession } from "@/lib/session";
+import { getT } from "@/lib/i18n/server";
 
 export async function login(_prev: { error?: string } | undefined, form: FormData): Promise<{ error?: string }> {
   const email = String(form.get("email") ?? "").trim().toLowerCase();
@@ -12,7 +13,7 @@ export async function login(_prev: { error?: string } | undefined, form: FormDat
   const [user] = await db.select().from(schema.users).where(eq(schema.users.email, email));
   // Mesma mensagem para utilizador inexistente e palavra-passe errada
   if (!user || !user.active || !(await bcrypt.compare(password, user.passwordHash))) {
-    return { error: "E-mail ou palavra-passe errados." };
+    return { error: (await getT())("E-mail ou palavra-passe errados.") };
   }
   const token = await signSession({ sub: user.id, name: user.name, role: user.role });
   (await cookies()).set(SESSION_COOKIE, token, {

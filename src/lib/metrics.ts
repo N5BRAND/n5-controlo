@@ -340,13 +340,32 @@ export function daysUntil(dueDate: string, now = new Date()): number {
   return Math.round((Date.parse(`${dueDate}T00:00:00Z`) - Date.parse(`${today}T00:00:00Z`)) / 864e5);
 }
 
-/** Estado do prazo de um item do roadmap. Itens em produção estão concluídos. */
+/** Estado do prazo de um item do roadmap. Itens em Done ou Canceled estão concluídos. */
 export function deadlineStatus(dueDate: string | null, phase: string, now = new Date(), soonDays = DUE_SOON_DAYS): DeadlineStatus {
-  if (phase === "producao") return "concluido";
+  if (phase === "done" || phase === "canceled") return "concluido";
   if (!dueDate) return "sem_prazo";
   const d = daysUntil(dueDate, now);
   if (d < 0) return "atrasado";
   if (d === 0) return "hoje";
   if (d <= soonDays) return "a_chegar";
   return "ok";
+}
+
+// ---------- Pipeline: ordenação das tarefas ----------
+export const PRIORITY_ORDER = ["urgente", "alta", "normal", "baixa"] as const;
+export type Priority = (typeof PRIORITY_ORDER)[number];
+
+/** Ordena por prioridade, depois por prazo (sem prazo no fim) e por fim pela pontuação RICE (maior primeiro). */
+export function compareTasks(
+  a: { priority: Priority; dueDate: string | null; score: number },
+  b: { priority: Priority; dueDate: string | null; score: number },
+): number {
+  const p = PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority);
+  if (p !== 0) return p;
+  if (a.dueDate !== b.dueDate) {
+    if (!a.dueDate) return 1;
+    if (!b.dueDate) return -1;
+    return a.dueDate.localeCompare(b.dueDate);
+  }
+  return b.score - a.score;
 }

@@ -33,10 +33,10 @@ describe("pendentes", () => {
   const msg = (id: string, body: string, daysAgo: number, o: Partial<ChatMsg> = {}): ChatMsg =>
     ({ id, body, kind: "mensagem", parentId: null, userName: "Ana", createdAt: new Date(now.getTime() - daysAgo * 864e5), resolvedAt: null, deletedAt: null, ...o });
   const items = [
-    { id: 1, code: "CLA-1", title: "Marcar visitas por voz", phase: "desenvolvimento", dueDate: "2026-10-20", owner: "Ana" },
-    { id: 2, code: "CLA-2", title: "Resumo da chamada na ficha", phase: "testes", dueDate: null, owner: null },
-    { id: 3, code: "CLA-3", title: "Vocabulário de moradas", phase: "ideia", dueDate: null, owner: null },
-    { id: 4, code: "CLA-4", title: "Relatório por WhatsApp", phase: "producao", dueDate: "2026-10-01", owner: "Ana" },
+    { id: 1, code: "CLA-1", title: "Marcar visitas por voz", phase: "in_progress", dueDate: "2026-10-20", owner: "Ana" },
+    { id: 2, code: "CLA-2", title: "Resumo da chamada na ficha", phase: "testing_beta", dueDate: null, owner: null },
+    { id: 3, code: "CLA-3", title: "Vocabulário de moradas", phase: "sprint_backlog", dueDate: null, owner: null },
+    { id: 4, code: "CLA-4", title: "Relatório por WhatsApp", phase: "done", dueDate: "2026-10-01", owner: "Ana" },
   ];
   it("junta conversa e pipeline", () => {
     const messages = [

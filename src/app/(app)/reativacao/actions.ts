@@ -5,12 +5,14 @@ import { db, schema } from "@/db";
 import { allowedSoftware, requireUser } from "@/lib/auth";
 import { queueMessage, runEngagement } from "@/lib/engagement";
 import { audit } from "@/lib/audit";
+import { getT } from "@/lib/i18n/server";
 
 type Result = { error?: string; ok?: string } | undefined;
 const TYPES = ["lembrete", "dica", "novidade", "oferta", "feedback", "fim_trial", "reativacao"] as const;
 
 export async function saveTemplate(_prev: Result, form: FormData): Promise<Result> {
   const user = await requireUser("reativacao");
+  const t = await getT();
   const id = Number(form.get("id") ?? 0);
   const ctaUrl = String(form.get("ctaUrl") ?? "").trim() || null;
   const values = {
@@ -23,19 +25,20 @@ export async function saveTemplate(_prev: Result, form: FormData): Promise<Resul
     ctaLabel: String(form.get("ctaLabel") ?? "").trim() || null,
     ctaUrl,
   };
-  if (!values.name || !values.subject || !values.body) return { error: "Preenche nome, assunto ou título, e texto." };
-  if (!TYPES.includes(values.type)) return { error: "Tipo inválido." };
-  if (ctaUrl && !/^https:\/\//.test(ctaUrl)) return { error: "O link do botão tem de começar por https://" };
-  if (values.softwareId && !allowedSoftware(user, values.softwareId)) return { error: "Sem acesso a este software." };
+  if (!values.name || !values.subject || !values.body) return { error: t("Preenche nome, assunto ou título, e texto.") };
+  if (!TYPES.includes(values.type)) return { error: t("Tipo inválido.") };
+  if (ctaUrl && !/^https:\/\//.test(ctaUrl)) return { error: t("O link do botão tem de começar por https://") };
+  if (values.softwareId && !allowedSoftware(user, values.softwareId)) return { error: t("Sem acesso a este software.") };
   if (id) await db.update(schema.messageTemplates).set(values).where(eq(schema.messageTemplates.id, id));
   else await db.insert(schema.messageTemplates).values(values);
   await audit(`user:${user.sub}`, id ? "template.updated" : "template.created", "message_template", id || null, null, values);
   revalidatePath("/reativacao");
-  return { ok: `Modelo "${values.name}" guardado.` };
+  return { ok: t('Modelo "{name}" guardado.', { name: values.name }) };
 }
 
 export async function saveRule(_prev: Result, form: FormData): Promise<Result> {
   const user = await requireUser("reativacao");
+  const t = await getT();
   const id = Number(form.get("id") ?? 0);
   const values = {
     name: String(form.get("name") ?? "").trim(),
@@ -45,13 +48,13 @@ export async function saveRule(_prev: Result, form: FormData): Promise<Result> {
     templateId: Number(form.get("templateId")),
     active: form.get("active") === "on",
   };
-  if (!values.name || !Number.isInteger(values.inactiveDays) || values.inactiveDays < 1) return { error: "Indica um nome e um número de dias (1 ou mais)." };
-  if (!values.templateId) return { error: "Escolhe o modelo da comunicação." };
+  if (!values.name || !Number.isInteger(values.inactiveDays) || values.inactiveDays < 1) return { error: t("Indica um nome e um número de dias (1 ou mais).") };
+  if (!values.templateId) return { error: t("Escolhe o modelo da comunicação.") };
   if (id) await db.update(schema.engagementRules).set(values).where(eq(schema.engagementRules.id, id));
   else await db.insert(schema.engagementRules).values(values);
   await audit(`user:${user.sub}`, id ? "rule.updated" : "rule.created", "engagement_rule", id || null, null, values);
   revalidatePath("/reativacao");
-  return { ok: `Regra "${values.name}" guardada.` };
+  return { ok: t('Regra "{name}" guardada.', { name: values.name }) };
 }
 
 export async function toggleRule(form: FormData) {
@@ -66,16 +69,17 @@ export async function toggleRule(form: FormData) {
 
 export async function sendManual(_prev: Result, form: FormData): Promise<Result> {
   const user = await requireUser("reativacao");
+  const t = await getT();
   const [p] = await db.select().from(schema.persons).where(eq(schema.persons.id, String(form.get("personId"))));
-  const [t] = await db.select().from(schema.messageTemplates).where(eq(schema.messageTemplates.id, Number(form.get("templateId"))));
-  if (!p || !t) return { error: "Escolhe a pessoa e o modelo." };
-  if (!p.softwareId || !allowedSoftware(user, p.softwareId)) return { error: "Sem acesso a este software." };
-  if (t.softwareId && t.softwareId !== p.softwareId) return { error: "Esse modelo é de outro software." };
+  const [tm] = await db.select().from(schema.messageTemplates).where(eq(schema.messageTemplates.id, Number(form.get("templateId"))));
+  if (!p || !tm) return { error: t("Escolhe a pessoa e o modelo.") };
+  if (!p.softwareId || !allowedSoftware(user, p.softwareId)) return { error: t("Sem acesso a este software.") };
+  if (tm.softwareId && tm.softwareId !== p.softwareId) return { error: t("Esse modelo é de outro software.") };
   // Envio manual respeita o opt-out mas não os limites de frequência (decisão de uma pessoa da equipa)
-  const r = await queueMessage(p, t, { actor: `user:${user.sub}`, ignoreCaps: true });
+  const r = await queueMessage(p, tm, { actor: `user:${user.sub}`, ignoreCaps: true });
   revalidatePath("/reativacao");
-  if (r.status === "bloqueada" || r.status === "falhou") return { error: `Não enviado: ${r.reason}.` };
-  return { ok: r.status === "pendente" ? `Fica para enviar: ${r.reason}.` : "Comunicação enviada." };
+  if (r.status === "bloqueada" || r.status === "falhou") return { error: t("Não enviado: {reason}.", { reason: r.reason ? t(r.reason) : "" }) };
+  return { ok: r.status === "pendente" ? t("Fica para enviar: {reason}.", { reason: r.reason ? t(r.reason) : "" }) : t("Comunicação enviada.") };
 }
 
 export async function runNow() {

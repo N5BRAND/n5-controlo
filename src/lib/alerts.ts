@@ -79,7 +79,7 @@ export async function evaluateAlerts(now = new Date()): Promise<{ checked: numbe
 
   // --- Pipeline: item do sprint sem mudanças há 5 dias úteis
   const stuck = await db.select().from(schema.roadmapItems)
-    .where(sql`${schema.roadmapItems.sprint} is not null and ${schema.roadmapItems.phase} in ('desenvolvimento','testes','staging')`);
+    .where(sql`${schema.roadmapItems.sprint} is not null and ${schema.roadmapItems.phase} not in ('sprint_backlog','paused','done','canceled')`);
   for (const i of stuck) {
     if (businessHoursBetween(i.updatedAt, now) > 5 * 9) {
       await bump({ module: "pipeline", softwareId: i.softwareId, severity: "informacao",
@@ -197,7 +197,7 @@ export async function evaluateAlerts(now = new Date()): Promise<{ checked: numbe
   }
 
   // --- Pipeline: prazos ultrapassados, a vencer hoje e a chegar
-  const withDue = await db.select().from(schema.roadmapItems).where(sql`${schema.roadmapItems.dueDate} is not null and ${schema.roadmapItems.phase} <> 'producao'`);
+  const withDue = await db.select().from(schema.roadmapItems).where(sql`${schema.roadmapItems.dueDate} is not null and ${schema.roadmapItems.phase} not in ('done','canceled')`);
   for (const i of withDue) {
     const st = deadlineStatus(i.dueDate, i.phase, now);
     const d = daysUntil(i.dueDate!, now);

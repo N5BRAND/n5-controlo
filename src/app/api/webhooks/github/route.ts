@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { db, schema } from "@/db";
 import { verifyGithub } from "@/lib/signatures";
 import { raiseAlert } from "@/lib/alerts";
-import { phaseGuard, syncFeedbackWithItem } from "@/lib/core";
+
 import { audit } from "@/lib/audit";
 
 // Webhooks da GitHub App (só leitura): pull_request, pull_request_review, deployment_status, release.
@@ -22,21 +22,6 @@ async function itemForCode(text: string) {
   return item ?? null;
 }
 
-async function movePhase(itemId: number, phase: typeof schema.roadmapItems.$inferSelect.phase, actor: string) {
-  const [before] = await db.select().from(schema.roadmapItems).where(eq(schema.roadmapItems.id, itemId));
-  if (!before || before.phase === phase) return;
-  // As regras de fase valem também para mudanças automáticas: se faltar algo, avisa em vez de avançar
-  const blocked = phaseGuard(before, phase);
-  if (blocked) {
-    await raiseAlert({ module: "pipeline", softwareId: before.softwareId, severity: "aviso",
-      title: `${before.code} não avançou para ${phase}`, detail: blocked, dedupeKey: `fase-bloqueada:${before.id}:${phase}` });
-    return;
-  }
-  await db.update(schema.roadmapItems).set({ phase, phaseChangedAt: new Date(), updatedAt: new Date() }).where(eq(schema.roadmapItems.id, itemId));
-  await audit(actor, "roadmap.phase", "roadmap_item", itemId, { phase: before.phase }, { phase });
-  await syncFeedbackWithItem(itemId, phase, actor);
-}
-
 async function handle(event: string, p: Record<string, any>) {
   const repo: string = p.repository?.full_name ?? "";
   const softwareId = await softwareForRepo(repo);
@@ -52,8 +37,7 @@ async function handle(event: string, p: Record<string, any>) {
       isAgent, state, url: pr.html_url, mergedAt: pr.merged_at ? new Date(pr.merged_at) : null, createdAt: new Date(pr.created_at),
     };
     await db.insert(schema.pullRequests).values({ id, ...values }).onConflictDoUpdate({ target: schema.pullRequests.id, set: values });
-    // Merge na branch principal passa o item a Testes
-    if (item && pr.merged_at && pr.base?.ref === p.repository?.default_branch) await movePhase(item.id, "testes", `webhook:github`);
+    // As tarefas do Pipeline mudam de fase à mão: o merge não as move.
     return;
   }
 
@@ -73,22 +57,7 @@ async function handle(event: string, p: Record<string, any>) {
       await raiseAlert({ module: "pipeline", softwareId, severity: "critico", title: `Deploy falhado: ${repo}`,
         detail: `Commit ${String(p.deployment?.sha ?? "").slice(0, 7)} em ${env}`, dedupeKey: `deploy:${id}` });
     }
-    if (status === "success") {
-      // Itens em Testes/Staging com PR neste commit avançam de fase
-      const prs = await db.select().from(schema.pullRequests).where(sql`${schema.pullRequests.repo} = ${repo} and ${schema.pullRequests.state} = 'merged' and ${schema.pullRequests.roadmapItemId} is not null`);
-      const target = env.startsWith("prod") ? "producao" : env.startsWith("stag") ? "staging" : null;
-      if (target) {
-        for (const pr of prs) {
-          const [item] = await db.select().from(schema.roadmapItems).where(eq(schema.roadmapItems.id, pr.roadmapItemId!));
-          if (!item) continue;
-          const order = ["testes", "staging"];
-          if (order.includes(item.phase) && !(target === "staging" && item.phase === "staging")) {
-            if (target === "producao" && item.productEvents.length === 0) continue; // regra 4: sem eventos não chega a Produção
-            await movePhase(item.id, target, "webhook:github");
-          }
-        }
-      }
-    }
+    // As tarefas do Pipeline mudam de fase à mão: os deploys não as movem.
     return;
   }
 

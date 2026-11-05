@@ -126,9 +126,12 @@ export async function roadmap(softwareIds: string[]) {
     .where(inArray(schema.roadmapItems.softwareId, softwareIds));
   const votes = await db.select({ item: schema.feedback.roadmapItemId, v: sql<number>`sum(${schema.feedback.votes})::int` })
     .from(schema.feedback).where(sql`${schema.feedback.roadmapItemId} is not null`).groupBy(schema.feedback.roadmapItemId);
+  const comments = await db.select({ item: schema.roadmapComments.itemId, n: sql<number>`count(*)::int` })
+    .from(schema.roadmapComments).groupBy(schema.roadmapComments.itemId);
   return items.map(({ i, owner }) => ({
     ...i, owner, score: riceScore(i.reach, i.impact, i.confidence, i.effort),
     communityVotes: votes.find((v) => v.item === i.id)?.v ?? 0,
+    comments: comments.find((c) => c.item === i.id)?.n ?? 0,
   })).sort((a, b) => b.score - a.score);
 }
 

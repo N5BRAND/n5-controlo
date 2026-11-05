@@ -100,7 +100,7 @@ async function deliver(id: string, now: Date): Promise<{ status: QueueResult["st
   const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const html = `<div style="font-family:Arial,sans-serif;font-size:15px;line-height:1.5;color:#18221e;max-width:560px">
 ${m.body.split(/\n{2,}/).map((para) => `<p>${esc(para).replace(/\n/g, "<br>")}</p>`).join("\n")}
-${ctaLink ? `<p><a href="${ctaLink}" style="display:inline-block;background:#0e6a5a;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">${esc(m.ctaLabel ?? "Abrir")}</a></p>` : ""}
+${ctaLink ? `<p><a href="${ctaLink}" style="display:inline-block;background:#15181d;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">${esc(m.ctaLabel ?? "Abrir")}</a></p>` : ""}
 <p style="font-size:12px;color:#5a6863">Não quer receber estes e-mails? <a href="${unsubscribeUrl}">Cancelar a subscrição</a>.</p></div>`;
   const text = `${m.body}${ctaLink ? `\n\n${m.ctaLabel ?? "Abrir"}: ${ctaLink}` : ""}\n\nCancelar a subscrição: ${unsubscribeUrl}`;
   const r = await sendEmail({ to: p.email, subject: m.subject, text, html, unsubscribeUrl });

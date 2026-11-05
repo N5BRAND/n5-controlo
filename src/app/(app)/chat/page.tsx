@@ -5,6 +5,7 @@ import { ARCHIVE_AFTER_DAYS } from "@/lib/chat-rules";
 import { llmConfigured } from "@/lib/llm";
 import { fmtDateTime } from "@/lib/format";
 import { Empty, PageHeader, Pill } from "@/components/ui";
+import { getT } from "@/lib/i18n/server";
 import { ChatClient, SummaryButtons } from "./ChatClient";
 
 type SP = Record<string, string | string[] | undefined>;
@@ -18,6 +19,7 @@ const monthName = (d: Date) => new Intl.DateTimeFormat("pt-PT", { month: "long",
 
 export default async function Chat({ searchParams }: { searchParams: Promise<SP> }) {
   const user = await requireUser("chat");
+  const t = await getT();
   const sp = await searchParams;
   const channels = await channelsFor(user);
   const wanted = str(sp.canal) ?? GENERAL;
@@ -42,14 +44,14 @@ export default async function Chat({ searchParams }: { searchParams: Promise<SP>
   };
   const pinned = messages.filter((m) => m.pinned && !m.deletedAt);
   const openPending = messages.filter((m) => m.kind === "pendente" && !m.resolvedAt && !m.deletedAt).length;
-  const browsing = q ? `Resultados da pesquisa "${q}" em todo o histórico` : month ? `Mensagens originais de ${monthName(new Date(`${month}-01T00:00:00Z`))} (arquivo)` : null;
+  const browsing = q ? t("Resultados da pesquisa \"{q}\" em todo o histórico", { q }) : month ? t("Mensagens originais de {month} (arquivo)", { month: monthName(new Date(`${month}-01T00:00:00Z`)) }) : null;
 
   return (
     <>
-      <PageHeader title="Chat" lead={`Conversa de trabalho por projeto. Todo o histórico fica guardado; o que tem mais de ${ARCHIVE_AFTER_DAYS} dias é resumido automaticamente por mês, e as mensagens originais continuam a um clique.`} />
+      <PageHeader title="Chat" lead={t("Conversa de trabalho por projeto. Todo o histórico fica guardado; o que tem mais de {days} dias é resumido automaticamente por mês, e as mensagens originais continuam a um clique.", { days: ARCHIVE_AFTER_DAYS })} />
       <div className="grid gap-4 lg:grid-cols-[200px_minmax(0,1fr)_300px]">
-        <nav aria-label="Canais" className="card p-2 h-fit">
-          <div className="text-xs font-semibold text-muted px-2 py-1">Canais</div>
+        <nav aria-label={t("Canais")} className="card p-2 h-fit">
+          <div className="text-xs font-semibold text-muted px-2 py-1">{t("Canais")}</div>
           <ul>
             {channels.map((c) => {
               const u = unread.get(c.id);
@@ -63,34 +65,34 @@ export default async function Chat({ searchParams }: { searchParams: Promise<SP>
               );
             })}
           </ul>
-          <p className="text-xs text-muted px-2 mt-2">Cada software tem o seu canal; o Geral é para assuntos de todos.</p>
+          <p className="text-xs text-muted px-2 mt-2">{t("Cada software tem o seu canal; o Geral é para assuntos de todos.")}</p>
         </nav>
 
         <section className="min-w-0">
           <div className="flex flex-wrap items-center gap-2 mb-3">
-            <nav className="flex flex-wrap gap-1" aria-label="Filtros">
+            <nav className="flex flex-wrap gap-1" aria-label={t("Filtros")}>
               {FILTERS.map((f) => (
                 <Link key={f.key} href={href({ filtro: f.key === "todas" ? undefined : f.key })} className={`tab ${f.key === filter && !q && !month ? "tab-active" : ""}`}>
-                  {f.label}{f.key === "pendentes" && openPending && filter !== "pendentes" ? ` (${openPending})` : ""}
+                  {t(f.label)}{f.key === "pendentes" && openPending && filter !== "pendentes" ? ` (${openPending})` : ""}
                 </Link>
               ))}
             </nav>
             <form action="/chat" className="ml-auto flex gap-1" role="search">
               <input type="hidden" name="canal" value={channel.id} />
-              <input name="q" defaultValue={q} placeholder="Pesquisar em todo o histórico" className="input w-56" aria-label="Pesquisar mensagens" />
-              <button className="btn">Pesquisar</button>
+              <input name="q" defaultValue={q} placeholder={t("Pesquisar em todo o histórico")} className="input w-56" aria-label={t("Pesquisar mensagens")} />
+              <button className="btn">{t("Pesquisar")}</button>
             </form>
           </div>
           {browsing ? (
             <div className="card mb-3 flex items-center justify-between text-sm bg-accent-soft border-accent/30">
-              <span>{browsing} · {messages.length} mensagem(ns)</span>
-              <Link href={href({})} className="btn">Voltar à conversa</Link>
+              <span>{browsing} · {t("{n} mensagem(ns)", { n: messages.length })}</span>
+              <Link href={href({})} className="btn">{t("Voltar à conversa")}</Link>
             </div>
           ) : null}
 
           {!browsing && archive.length && filter === "todas" ? (
             <details className="card mb-3">
-              <summary className="cursor-pointer text-sm font-semibold">Arquivo resumido · {archive.length} {archive.length === 1 ? "mês" : "meses"} com mais de {ARCHIVE_AFTER_DAYS} dias</summary>
+              <summary className="cursor-pointer text-sm font-semibold">{archive.length === 1 ? t("Arquivo resumido · {n} mês com mais de {days} dias", { n: archive.length, days: ARCHIVE_AFTER_DAYS }) : t("Arquivo resumido · {n} meses com mais de {days} dias", { n: archive.length, days: ARCHIVE_AFTER_DAYS })}</summary>
               <ul className="mt-3 space-y-3">
                 {archive.map((a) => {
                   const m = a.periodStart.toISOString().slice(0, 7);
@@ -98,8 +100,8 @@ export default async function Chat({ searchParams }: { searchParams: Promise<SP>
                     <li key={a.id} className="border-t border-line pt-3">
                       <div className="flex flex-wrap items-center gap-2 text-sm font-medium">
                         <span className="capitalize">{monthName(a.periodStart)}</span>
-                        <span className="text-muted text-xs">{a.messages} mensagens · resumo por {a.engine === "regras" ? "regras" : "IA"}</span>
-                        <Link href={href({ mes: m })} className="text-accent text-xs hover:underline ml-auto">Ver mensagens originais</Link>
+                        <span className="text-muted text-xs">{a.engine === "regras" ? t("{n} mensagens · resumo por regras", { n: a.messages }) : t("{n} mensagens · resumo por IA", { n: a.messages })}</span>
+                        <Link href={href({ mes: m })} className="text-accent text-xs hover:underline ml-auto">{t("Ver mensagens originais")}</Link>
                       </div>
                       <div className="text-sm whitespace-pre-wrap mt-1">{a.content}</div>
                     </li>
@@ -122,32 +124,32 @@ export default async function Chat({ searchParams }: { searchParams: Promise<SP>
               id: m.id, userId: m.userId, userName: m.userName, body: m.body, kind: m.kind, parentId: m.parentId, pinned: m.pinned,
               resolved: !!m.resolvedAt, edited: !!m.editedAt, deleted: !!m.deletedAt, mentions: m.mentions, createdAt: m.createdAt.toISOString(),
             }))}
-            emptyText={browsing ? "Nada encontrado." : filter !== "todas" ? "Nenhuma mensagem com este filtro." : "Ainda não há mensagens neste canal. Começa a conversa."}
+            emptyText={browsing ? t("Nada encontrado.") : filter !== "todas" ? t("Nenhuma mensagem com este filtro.") : t("Ainda não há mensagens neste canal. Começa a conversa.")}
           />
         </section>
 
         <aside className="space-y-4">
           <section className="card">
-            <h2 className="h2">Pôr-me a par</h2>
-            <p className="text-xs text-muted mb-3">Resume a conversa e cruza-a com o pipeline, o roadmap e o backlog {channel.id === GENERAL ? "de todos os softwares" : `do ${channel.name}`}.</p>
+            <h2 className="h2">{t("Pôr-me a par")}</h2>
+            <p className="text-xs text-muted mb-3">{channel.id === GENERAL ? t("Resume a conversa e cruza-a com o pipeline, o roadmap e o backlog de todos os softwares.") : t("Resume a conversa e cruza-a com o pipeline, o roadmap e o backlog do {name}.", { name: channel.name })}</p>
             <SummaryButtons channel={channel.id} />
-            {!llmConfigured() ? <p className="text-xs text-muted mt-2">Sem modelo de IA ligado: o resumo é feito por regras (temas, decisões e pendentes). Liga o Bedrock em LLM_PROVIDER para um texto corrido.</p> : null}
+            {!llmConfigured() ? <p className="text-xs text-muted mt-2">{t("Sem modelo de IA ligado: o resumo é feito por regras (temas, decisões e pendentes). Liga o Bedrock em LLM_PROVIDER para um texto corrido.")}</p> : null}
           </section>
           {summary ? (
             <section className="card" aria-live="polite">
               <div className="flex items-center gap-2 mb-2">
-                <h2 className="h2 mb-0">{summary.kind === "pendentes" ? "Pendentes" : "O que se falou"}</h2>
-                <Pill tone={summary.engine === "regras" ? "neutro" : "accent"}>{summary.engine === "regras" ? "regras" : "IA"}</Pill>
+                <h2 className="h2 mb-0">{summary.kind === "pendentes" ? t("Pendentes") : t("O que se falou")}</h2>
+                <Pill tone={summary.engine === "regras" ? "neutro" : "accent"}>{summary.engine === "regras" ? t("regras") : t("IA")}</Pill>
               </div>
-              <div className="text-xs text-muted mb-2">Pedido a {fmtDateTime(summary.createdAt)} · {summary.messages} mensagens analisadas</div>
+              <div className="text-xs text-muted mb-2">{t("Pedido a {date} · {n} mensagens analisadas", { date: fmtDateTime(summary.createdAt), n: summary.messages })}</div>
               <div className="text-sm whitespace-pre-wrap leading-relaxed">{summary.content}</div>
             </section>
           ) : (
-            <Empty title="Sem resumos ainda">Carrega num dos botões acima.</Empty>
+            <Empty title={t("Sem resumos ainda")}>{t("Carrega num dos botões acima.")}</Empty>
           )}
           {pinned.length ? (
             <section className="card">
-              <h2 className="h2">Fixadas</h2>
+              <h2 className="h2">{t("Fixadas")}</h2>
               <ul className="space-y-2 text-sm">
                 {pinned.map((p) => <li key={p.id}><a href={`#${p.id}`} className="hover:underline">{p.body.slice(0, 120)}</a> <span className="text-xs text-muted">— {p.userName}</span></li>)}
               </ul>

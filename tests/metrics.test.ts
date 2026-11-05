@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  accountHealth, acvCents, activeSeconds, arpaCents, businessHoursBetween, cacCents, churnRate, ltvCents,
+  accountHealth, acvCents, compareTasks, activeSeconds, arpaCents, businessHoursBetween, cacCents, churnRate, ltvCents,
   mrrMovements, nrr, paybackMonths, previousMonthKey, riceScore,
 } from "@/lib/metrics";
 
@@ -97,11 +97,21 @@ describe("prazos do pipeline", () => {
     expect(daysUntil("2026-10-20", now)).toBe(-6);
   });
   it("classifica o prazo", () => {
-    expect(deadlineStatus("2026-10-20", "desenvolvimento", now)).toBe("atrasado");
-    expect(deadlineStatus("2026-10-26", "testes", now)).toBe("hoje");
-    expect(deadlineStatus("2026-10-28", "design", now)).toBe("a_chegar");
-    expect(deadlineStatus("2026-11-20", "design", now)).toBe("ok");
-    expect(deadlineStatus(null, "design", now)).toBe("sem_prazo");
-    expect(deadlineStatus("2026-10-20", "producao", now)).toBe("concluido");
+    expect(deadlineStatus("2026-10-20", "in_progress", now)).toBe("atrasado");
+    expect(deadlineStatus("2026-10-26", "testing_beta", now)).toBe("hoje");
+    expect(deadlineStatus("2026-10-28", "sprint_backlog", now)).toBe("a_chegar");
+    expect(deadlineStatus("2026-11-20", "sprint_backlog", now)).toBe("ok");
+    expect(deadlineStatus(null, "sprint_backlog", now)).toBe("sem_prazo");
+    expect(deadlineStatus("2026-10-20", "done", now)).toBe("concluido");
+  });
+});
+
+describe("ordenação das tarefas do pipeline", () => {
+  const t = (priority: "urgente" | "alta" | "normal" | "baixa", dueDate: string | null, score = 0) => ({ priority, dueDate, score });
+  it("ordena por prioridade, depois prazo (sem prazo no fim) e pontuação", () => {
+    const list = [t("baixa", "2026-01-01"), t("normal", null, 5), t("normal", "2026-03-01"), t("urgente", null), t("normal", "2026-02-01"), t("normal", null, 9)];
+    expect([...list].sort(compareTasks)).toEqual([
+      t("urgente", null), t("normal", "2026-02-01"), t("normal", "2026-03-01"), t("normal", null, 9), t("normal", null, 5), t("baixa", "2026-01-01"),
+    ]);
   });
 });
