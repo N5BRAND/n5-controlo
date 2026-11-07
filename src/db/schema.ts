@@ -349,7 +349,7 @@ export const metaConsents = pgTable("meta_consents", {
   consentedAt: timestamp("consented_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
   purchaseSentAt: timestamp("purchase_sent_at", { withTimezone: true }),
-}, (t) => [index("meta_consents_expires_idx").on(t.expiresAt)]).enableRLS(); // sem acesso pela API pública do Supabase; a app usa a ligação direta
+}, (t) => [index("meta_consents_expires_idx").on(t.expiresAt)]).enableRLS(); // sem acesso fora da aplicação; só o Controlo lhe liga diretamente
 
 // ---------- Orçamentos ABO (campanhas da Meta com orçamento por conjunto) ----------
 export const metaAboCampaigns = pgTable("meta_abo_campaigns", {

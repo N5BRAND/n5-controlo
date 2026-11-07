@@ -34,11 +34,7 @@ Acessos: sócios e direção de operações veem tudo (incluindo Reativação); 
 
 Demonstração estática dos dashboards no GitHub Pages: https://n5-brand.github.io/n5-controlo/ (dados de exemplo; filtros e formulários não funcionam). Para a atualizar: `python3 scripts/export-demo.py` (instruções no próprio script).
 
-App completa, com login e base de dados, na Netlify: ver `docs/deploy-netlify.md`. Alternativa no Render:
-
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/n5-brand/n5-controlo)
-
-Cria a app e a base de dados em Frankfurt com dados de exemplo (`render.yaml`). Entra com `socio@exemplo.n5` e a palavra-passe que o Render gera em `DEMO_PASSWORD` (Environment). O plano grátis adormece sem uso e a base de dados grátis do Render expira ao fim de 30 dias: serve para ver, não para produção.
+App completa, com login e base de dados: ver `docs/deploy-vps.md` (VPS própria, com Easypanel) ou `docs/deploy-aws.md` (organização AWS N5).
 
 ## Correr localmente
 
@@ -100,7 +96,7 @@ curl -X POST https://controlo.n5.../api/v1/events \
 
 ## Ligações externas
 
-Ver `docs/integracoes.md` (Stripe, GitHub, Slack, Meta, comunicações na app e e-mail) e `docs/deploy-aws.md` (alojamento na organização AWS N5).
+Ver `docs/integracoes.md` (Stripe, GitHub, Slack, Meta, comunicações na app e e-mail), `docs/deploy-vps.md` (VPS própria com Easypanel) e `docs/deploy-aws.md` (alojamento na organização AWS N5).
 
 ## Estrutura
 

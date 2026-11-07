@@ -16,8 +16,8 @@ export function loginBlocked(fails: { account: number; ip: number }) {
   return fails.account >= MAX_FAILS_PER_ACCOUNT || fails.ip >= MAX_FAILS_PER_IP;
 }
 
-/** O IP de quem pede: o da Netlify primeiro, depois o primeiro de x-forwarded-for. */
+/** O IP de quem pede: o primeiro de x-forwarded-for (posto pelo proxy reverso da VPS), depois x-real-ip. */
 export function clientIp(h: { get(name: string): string | null }): string {
-  const ip = h.get("x-nf-client-connection-ip") ?? h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "";
+  const ip = h.get("x-forwarded-for")?.split(",")[0] ?? h.get("x-real-ip") ?? "";
   return ip.trim() || "desconhecido";
 }

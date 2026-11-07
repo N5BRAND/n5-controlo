@@ -247,9 +247,9 @@ function Monitor({ m, chosen, list, sp, periodo, host, page, site, siteErrors }:
         <section className="card">
           <h2 className="h2">O que acontece no site</h2>
           <p className="text-sm text-muted">{!host ? "Este software ainda não tem um site ligado ao PostHog." : posthogProjectKeyOnly()
-            ? "A POSTHOG_API_KEY que está na Netlify é a chave do projeto (começa por phc_): é a do site, serve para enviar eventos e não deixa ler números. Cria no PostHog uma chave pessoal (Settings › Personal API keys, começa por phx_) só com «Query: Read» e põe-na em POSTHOG_PERSONAL_API_KEY. Com ela, aparecem aqui as conclusões, o funil da página, as secções, o tempo, os passos da inscrição, os campos com erros e de onde vêm as visitas."
+            ? "A POSTHOG_API_KEY configurada é a chave do projeto (começa por phc_): é a do site, serve para enviar eventos e não deixa ler números. Cria no PostHog uma chave pessoal (Settings › Personal API keys, começa por phx_) só com «Query: Read» e põe-na em POSTHOG_PERSONAL_API_KEY. Com ela, aparecem aqui as conclusões, o funil da página, as secções, o tempo, os passos da inscrição, os campos com erros e de onde vêm as visitas."
             : !posthogConfigured()
-            ? "Falta a chave pessoal do PostHog (POSTHOG_PERSONAL_API_KEY, só com «Query: Read») nas variáveis da Netlify. Com ela, aparecem aqui as conclusões, o funil da página, as secções, o tempo, os passos da inscrição, os campos com erros e de onde vêm as visitas, e as colunas do site em «Por landing page»."
+            ? "Falta a chave pessoal do PostHog (POSTHOG_PERSONAL_API_KEY, só com «Query: Read») nas variáveis de ambiente. Com ela, aparecem aqui as conclusões, o funil da página, as secções, o tempo, os passos da inscrição, os campos com erros e de onde vêm as visitas, e as colunas do site em «Por landing page»."
             : "Não foi possível ler o PostHog."}</p>
         </section>
       )}

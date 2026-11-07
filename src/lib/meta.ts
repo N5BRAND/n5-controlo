@@ -9,7 +9,7 @@ import { lastMetaSync } from "@/lib/queries";
 // Leitura do Meta Insights ao nível do anúncio, por dia, para os últimos 28 dias
 // (a Meta ainda corrige esses dados), mais o estado de cada anúncio e os totais de cada campanha desde o início.
 // Precisa de META_ACCESS_TOKEN com ads_read.
-// As linhas gravam-se em lote: as funções da Netlify estão longe da base, e uma gravação por linha levava 20 segundos.
+// As linhas gravam-se em lote, por ser muito mais rápido do que gravar linha a linha (chegou a levar 20 segundos).
 
 /** Na gravação em lote, as colunas a atualizar quando a linha já existe ficam com o valor novo («excluded»). */
 function excluded(table: PgTable, keys: string[]): Record<string, SQL> {

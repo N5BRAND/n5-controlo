@@ -5,9 +5,9 @@ import { randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { db, schema, sql } from "./index";
 
-// Nunca em produção: nem com NODE_ENV=production nem no deploy de produção da Netlify (CONTEXT=production).
+// Nunca em produção (NODE_ENV=production).
 // No build (--if-empty) sai sem erro, para não partir o deploy; corrido à mão, falha.
-if ((process.env.NODE_ENV === "production" || process.env.CONTEXT === "production") && !process.argv.includes("--force")) {
+if (process.env.NODE_ENV === "production" && !process.argv.includes("--force")) {
   console.error("Recusado: o seed cria dados de exemplo. Em produção usa só scripts/create-user.ts.");
   process.exit(process.argv.includes("--if-empty") ? 0 : 1);
 }
