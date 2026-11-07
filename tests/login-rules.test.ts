@@ -17,9 +17,9 @@ describe("travão às tentativas de entrada", () => {
     expect(h).toMatch(/^[0-9a-f]{32}$/);
     expect(h).not.toContain("pedro");
   });
-  it("lê o IP da Netlify primeiro e depois o primeiro de x-forwarded-for", () => {
-    expect(clientIp(hdrs({ "x-nf-client-connection-ip": "203.0.113.7", "x-forwarded-for": "10.0.0.1" }))).toBe("203.0.113.7");
+  it("lê o primeiro IP de x-forwarded-for, com x-real-ip como alternativa", () => {
     expect(clientIp(hdrs({ "x-forwarded-for": "198.51.100.2, 10.0.0.1" }))).toBe("198.51.100.2");
+    expect(clientIp(hdrs({ "x-real-ip": "203.0.113.7" }))).toBe("203.0.113.7");
     expect(clientIp(hdrs({}))).toBe("desconhecido");
   });
 });

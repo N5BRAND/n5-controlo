@@ -5,8 +5,7 @@
 export const LIVE_DAYS = 2;
 /** Duas aberturas seguidas (ou o mesmo ecrã pedido duas vezes) não voltam a perguntar à Meta. */
 export const LIVE_MIN_SECONDS = 30;
-/** A página não espera mais do que isto pela Meta; se demorar, mostra a última leitura.
- *  Fica abaixo dos 10 segundos que a Netlify dá a cada página. */
+/** A página não espera mais do que isto pela Meta; se demorar, mostra a última leitura. */
 export const LIVE_TIMEOUT_MS = 5000;
 
 /** Se está na hora de ler a Meta outra vez. */

@@ -1,7 +1,7 @@
 """Exporta os ecrãs da app para uma demonstração estática no GitHub Pages (pasta demo/).
 
 Os dashboards ficam visíveis com os dados de exemplo; formulários, filtros e botões não funcionam
-numa página estática. Para a app completa usa o Render (render.yaml) ou a AWS (docs/deploy-aws.md).
+numa página estática. Para a app completa usa a VPS (docs/deploy-vps.md) ou a AWS (docs/deploy-aws.md).
 
 Uso (com Postgres local e o seed corrido):
   NEXT_BASE_PATH=/n5-controlo/demo npm run build
